@@ -1,0 +1,36 @@
+## Python
+.venv/
+venv/
+
+## Node
+node_modules/
+**/node_modules/
+
+## Next / build
+.next/
+web/.next/
+out/
+dist/
+build/
+
+## Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+## Environment
+.env
+.env.*.local
+
+## macOS
+.DS_Store
+
+## Editors/IDEs
+.vscode/
+.idea/
+
+## Misc
+Thumbs.db
+.cache/
+coverage/
