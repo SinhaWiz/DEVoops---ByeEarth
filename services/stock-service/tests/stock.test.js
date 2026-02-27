@@ -1,21 +1,25 @@
 const request = require('supertest');
-const app = require('../index');
-const { Sequelize, DataTypes } = require('sequelize');
-
-// We use a separate in-memory sqlite or a test postgres if available.
-// For simplicity in this env, we might just assume Postgres is reachable if we run with the docker-compose.
-// But usually for unit tests we mock or use sqlite.
-// Given the prompt's focus on "Postgres-backed", let's try to hit the DB if possible, or mock the model.
-
-jest.mock('../index', () => {
-  const original = jest.requireActual('../index');
-  // We can let it run and it will fail if no DB, but let's try to mock the specific calls for "unit" test
-  return original;
-});
+const { app, sequelize, redisClient } = require('../index');
 
 describe('Stock Service API', () => {
   beforeAll(async () => {
-    // Wait for DB sync if needed
+    // Sync DB and connect Redis for tests
+    try {
+      await sequelize.sync({ force: true }); // Wipe clean for testing
+      if (!redisClient.isOpen) {
+        await redisClient.connect();
+      }
+    } catch (err) {
+      console.warn('Test backend services not available. Some tests may fail.', err.message);
+    }
+  });
+
+  afterAll(async () => {
+    // Cleanup connections to avoid Jest leak warnings
+    await sequelize.close();
+    if (redisClient.isOpen) {
+      await redisClient.disconnect();
+    }
   });
 
   it('should return 404 for non-existent item', async () => {

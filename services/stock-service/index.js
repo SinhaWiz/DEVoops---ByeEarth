@@ -173,4 +173,4 @@ if (require.main === module) {
   init();
 }
 
-module.exports = app;
+module.exports = { app, sequelize, redisClient };
