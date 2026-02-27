@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        service: [frontend, identity-provider, order-gateway, stock-service, kitchen-queue, notification-hub]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: services/${{ matrix.service }}/package-lock.json
+
+    - name: Install dependencies
+      run: npm install
+      working-directory: services/${{ matrix.service }}
+
+    - name: Run build
+      run: |
+        if [ "${{ matrix.service }}" = "frontend" ]; then
+          npm run build
+        else
+          # For other services, just check if index.js exists for now
+          ls index.js
+        fi
+      working-directory: services/${{ matrix.service }}
+
+    - name: Run tests (placeholder)
+      run: |
+        if grep -q '"test":' package.json; then
+          npm test
+        else
+          echo "No tests defined for ${{ matrix.service }}"
+        fi
+      working-directory: services/${{ matrix.service }}

@@ -1,0 +1,94 @@
+services:
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - order-gateway
+      - identity-provider
+
+  identity-provider:
+    build:
+      context: ./services/identity-provider
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+    depends_on:
+      - db-postgres
+
+  order-gateway:
+    build:
+      context: ./services/order-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+    depends_on:
+      - db-redis
+      - identity-provider
+
+  stock-service:
+    build:
+      context: ./services/stock-service
+      dockerfile: Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      - PORT=3003
+    depends_on:
+      - db-postgres
+      - db-redis
+
+  kitchen-queue:
+    build:
+      context: ./services/kitchen-queue
+      dockerfile: Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      - PORT=3004
+    depends_on:
+      - mq-rabbitmq
+
+  notification-hub:
+    build:
+      context: ./services/notification-hub
+      dockerfile: Dockerfile
+    ports:
+      - "3005:3005"
+    environment:
+      - PORT=3005
+    depends_on:
+      - mq-rabbitmq
+
+  db-postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=dev
+      - POSTGRES_PASSWORD=devpassword
+      - POSTGRES_DB=cafeteria
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  db-redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  mq-rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+volumes:
+  postgres_data:

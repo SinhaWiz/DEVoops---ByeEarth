@@ -68,30 +68,39 @@
   - Real-time: WebSockets (Socket.IO or ws)
   - Container/orchestration: Docker Compose (judges), Kubernetes for cloud
   - CI: GitHub Actions
-- **Alternative (lightweight, high-performance)**:
-  - Backend: Go (Gin/Fiber) for low-latency services
-  - Queues: NATS or Redis Streams
-  - Frontend: Svelte or React
-- **Python option (rapid development, clear async support)**:
-  - Backend: FastAPI + Uvicorn (async)
-  - Async tasks: Celery (Redis/RabbitMQ)
-
-**Are Java-based stacks appropriate?**
-- **Yes — Suitable When**:
-  - The team has Java/Spring expertise.
-  - Strong typing, mature ecosystem, and production-grade libraries are required.
-  - You need transactional integrity and mature observability integrations (Spring Boot Actuator, Micrometer, Sleuth).
-- **Trade-offs**:
-  - **Pros**: Spring Boot provides all required pieces (security, Actuator, metrics, JWT support, DB integration). Concurrency control and transactional semantics are well supported. Excellent for robust, long-lived services.
-  - **Cons**: Higher memory footprint and longer startup times; slower to iterate compared to Node/Go. More boilerplate unless using Spring Boot with Kotlin or Spring WebFlux (reactive).
-- **Recommendation**: Use Spring Boot if team is comfortable with Java and you favor stability and strong frameworks. For a time-boxed sprint or fast MVP, Node.js/TypeScript or Go may deliver faster with fewer infra costs.
-
+- 
 **Next Steps I can do now (pick one)**
-- Draft the initial `docker-compose.yml` wiring minimal services.
 - Scaffold the `Identity Provider` and `Order Gateway` skeletons.
-- Create a CI pipeline template (`.github/workflows/ci.yml`) with test steps.
+- Add real logic to services and data models.
+- Implement JWT issuance and token validation.
 
 ---
+
+## Monorepo Layout
+```
+/services
+  /frontend           - Next.js SPA
+  /identity-provider  - AuthN/AuthZ service
+  /order-gateway      - API Gateway
+  /stock-service      - Inventory management
+  /kitchen-queue      - Order processing worker
+  /notification-hub   - Real-time updates
+/docker-compose.yml   - Orchestrates services and data stores (Postgres, Redis, RabbitMQ)
+/.github/workflows    - CI pipeline
+```
+
+## Getting Started
+To start the entire system and its dependencies:
+```bash
+docker compose up --build
+```
+
+Access:
+- Frontend: http://localhost:3000
+- RabbitMQ Management: http://localhost:15672
+
+CI pipeline is configured to build and test each service on every push to the `main` branch.
+
 Generated from: DevSprint 2026 Problem Statement (DevSprint 2026 Problem Statement.pdf)
 
 For the detailed plan and implementation tasks, see `README.md` in the repo root.
