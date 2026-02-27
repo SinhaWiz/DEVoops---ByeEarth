@@ -70,9 +70,9 @@
   - CI: GitHub Actions
 - 
 **Next Steps I can do now (pick one)**
-- **Phase 2 — Order Gateway & Cache (2 days)**: Gateway endpoints, Redis cache check for stock; immediate rejection if cache shows zero.
-- Scaffold the `Stock Service` with Postgres persistence.
-- Implement real-time notifications for order status.
+- **Phase 3 — Stock Service (2-3 days)**: Postgres-backed service with strict concurrency control (optimistic locking).
+- **Phase 4 — Kitchen Queue & Async Processing (2 days)**: Implement message queue consumer.
+- Implement real-time notifications for order status in **Notification Hub**.
 
 ---
 
