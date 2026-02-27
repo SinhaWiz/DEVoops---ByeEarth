@@ -70,9 +70,9 @@
   - CI: GitHub Actions
 - 
 **Next Steps I can do now (pick one)**
-- Scaffold the `Identity Provider` and `Order Gateway` skeletons.
-- Add real logic to services and data models.
-- Implement JWT issuance and token validation.
+- **Phase 2 — Order Gateway & Cache (2 days)**: Gateway endpoints, Redis cache check for stock; immediate rejection if cache shows zero.
+- Scaffold the `Stock Service` with Postgres persistence.
+- Implement real-time notifications for order status.
 
 ---
 
