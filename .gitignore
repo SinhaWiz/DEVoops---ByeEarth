@@ -8,7 +8,7 @@ node_modules/
 
 ## Next / build
 .next/
-web/.next/
+services/frontend/.next/
 out/
 dist/
 build/
