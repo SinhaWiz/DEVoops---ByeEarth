@@ -2,9 +2,15 @@ require('dotenv').config();
 const express = require('express');
 const { Sequelize, DataTypes } = require('sequelize');
 const cors = require('cors');
+const { createClient } = require('redis');
 
 const app = express();
 const PORT = process.env.PORT || 3003;
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+
+// Redis Client Connection
+const redisClient = createClient({ url: REDIS_URL });
+redisClient.on('error', (err) => console.log('Redis Client Error', err));
 
 // Environment Variables
 const PG_USER = process.env.PGUSER || 'dev';
@@ -42,18 +48,34 @@ const StockItem = sequelize.define('StockItem', {
   }
 }, {
   timestamps: true,
-  // Optimistic locking is handled by version field
   version: true,
 });
 
 app.use(cors());
 app.use(express.json());
 
+// Helper: Sync Redis Cache with DB for an item
+async function syncRedis(id, quantity) {
+  try {
+    // We only update if Redis is connected
+    if (redisClient.isOpen) {
+      // Use the same key pattern as order-gateway
+      await redisClient.set(`stock:${id}`, quantity.toString());
+    }
+  } catch (err) {
+    console.error(`Failed to sync Redis for ${id}:`, err.message);
+  }
+}
+
 // Health Check
 app.get('/health', async (req, res) => {
   try {
     await sequelize.authenticate();
-    res.status(200).json({ status: 'UP', database: 'connected' });
+    res.status(200).json({ 
+      status: 'UP', 
+      database: 'connected',
+      redis: redisClient.isOpen ? 'connected' : 'disconnected'
+    });
   } catch (err) {
     res.status(500).json({ status: 'DOWN', database: err.message });
   }
@@ -90,10 +112,11 @@ app.post('/stock/reduce', async (req, res) => {
       return res.status(422).json({ error: 'Insufficient stock' });
     }
 
-    // Sequelize handles optimistic locking if version is defined.
-    // item.save() will fail if another process changed the version.
     item.quantity -= quantity;
     await item.save();
+
+    // Side effect: Update Redis Cache for Fast-Fail consistency
+    await syncRedis(item.id, item.quantity);
 
     res.status(200).json({ 
       message: 'Stock reduced successfully', 
@@ -121,6 +144,8 @@ app.post('/seed', async (req, res) => {
   try {
     for (const item of items) {
       await StockItem.upsert(item);
+      // Sync each item to Redis during seeding
+      await syncRedis(item.id, item.quantity);
     }
     res.status(200).json({ message: 'Stock seeded successfully' });
   } catch (err) {
@@ -131,14 +156,15 @@ app.post('/seed', async (req, res) => {
 // Sync Database and Start
 async function init() {
   try {
+    await redisClient.connect();
     await sequelize.sync({ alter: true }); 
-    console.log('Postgres Database synced');
+    console.log('Postgres Database & Redis Cache synced');
     
     app.listen(PORT, () => {
       console.log(`Stock Service running on port ${PORT}`);
     });
   } catch (err) {
-    console.error('Failed to sync DB:', err.message);
+    console.error('Failed to init Stock Service:', err.message);
     process.exit(1);
   }
 }

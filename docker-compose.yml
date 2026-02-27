@@ -64,8 +64,10 @@ services:
     environment:
       - PORT=3004
       - RABBITMQ_URL=amqp://mq-rabbitmq:5672
+      - STOCK_SERVICE_URL=http://stock-service:3003
     depends_on:
       - mq-rabbitmq
+      - stock-service
 
   notification-hub:
     build:
