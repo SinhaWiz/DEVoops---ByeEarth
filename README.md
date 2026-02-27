@@ -1,103 +1,89 @@
-# DEVoops---ByeEarth
+# DEVoops — ByeEarth: IUT Cafeteria Microservices
 
-**Overview**
-- **Project**: IUT Cafeteria — convert a failing monolith into a resilient microservices system.
-- **Goal**: Implement containerized services (Identity Provider, Order Gateway, Stock Service, Kitchen Queue, Notification Hub), a SPA student UI, and an admin dashboard. Fulfill all security, resilience, observability, and CI requirements from the problem statement.
+A high-performance, resilient, and containerized microservices platform for the IUT Cafeteria, converted from a failing monolith to solve seasonal scale issues (Ramadan rush).
 
-**Requirements (Summary)**
-- **Auth**: Token handshake via Identity Provider; protected routes must return 401 for missing/invalid tokens.
-- **Ordering Flow**: Gateway validates token, checks cache, rejects instantly on zero stock; orders are acknowledged quickly (<2s) and processed asynchronously.
-- **Stock Safety**: Strong concurrency control (optimistic locking or equivalent) to avoid oversell and support idempotency for retries/partial failures.
-- **Resilience**: Services must be isolated (containers), tolerate partial failures, and expose health & metrics endpoints.
-- **Observability**: Health endpoints (200/503), metrics (orders, failures, avg latency), and logging.
-- **CI/CD & Tests**: Unit tests for order validation and stock deduction; pipeline runs tests on pushes to `main` and fails on test failures.
-- **UI**: SPA for students (login, place order, live status updates). Admin dashboard with health grid, live metrics, and a chaos toggle to kill services.
-- **Extras**: Docker Compose runnable system, optional cloud deployment, monitoring alerts and rate-limiter bonus.
+## 🚀 Quick Start
 
-**Suggested Architecture**
-- **Services**:
-  - **Identity Provider**: AuthN/AuthZ issuing JWTs.
-  - **Order Gateway**: API gateway, token validation, fast cache lookup, request routing.
-  - **Stock Service**: Canonical inventory with transactional updates and concurrency control.
-  - **Kitchen Queue**: Message-driven worker (ack now, process later).
-  - **Notification Hub**: Real-time push (WebSocket or server-sent events) to UIs.
-- **Data stores**: Relational DB for stock (Postgres), fast cache (Redis) in front of Stock Service, and durable message queue/stream (RabbitMQ, Redis Streams, or Kafka-lite) for Kitchen Queue.
-- **Containerization**: Docker for each service; `docker-compose.yml` to wire services for judges' local run.
+To start the entire system (6 services + 3 databases) in one command:
+```bash
+docker compose up -d --build
+```
 
-**Implementation Plan (Milestones & Tasks)**
-- **Phase 0 — Repo & infra (1 day)**: Create monorepo layout, `docker-compose.yml`, basic CI config (GitHub Actions). Acceptance: `docker compose up` starts empty services; CI pipeline created.
-- **Phase 1 — Identity & Auth (1-2 days)**: Implement Identity Provider (JWT issuance, login rate-limiter). Tests: auth token issuance and protected-route rejection (401).
-- **Phase 2 — Order Gateway & Cache (2 days)**: Gateway endpoints, token validation middleware, Redis cache check for stock; immediate rejection if cache shows zero. Tests: gateway rejects unauthorized and rejects zero-stock quickly.
-- **Phase 3 — Stock Service (2-3 days)**: Postgres-backed service with strict concurrency control (optimistic locking via row version or SELECT...FOR UPDATE where appropriate). Expose health & metrics. Tests: concurrent stock deductions, idempotency behavior.
-- **Phase 4 — Kitchen Queue & Async Processing (2 days)**: Implement message queue consumer, immediate order ack (<2s) and separate processing job (3-7s). Ensure retry & idempotency. Tests: ack time, eventual processing.
-- **Phase 5 — Notification Hub & UI (2-3 days)**: WebSocket-based real-time updates; SPA (React/Vite) that logs in, places order, shows status funnel. Admin dashboard shows service health, metrics, and chaos toggle endpoints.
-- **Phase 6 — Observability & CI (1-2 days)**: Add health/metrics endpoints (Prometheus metrics format), structured logs, Grafana dashboards (optional). Complete CI pipeline to run unit tests and linter on push.
-- **Phase 7 — Hardening & Bonus (1-2 days)**: Add rate-limiting, chaos experiments, container readiness probes, automated alerts (e.g., email/Slack) for gateway latency breaches, optional cloud deploy.
-
-**Acceptance Criteria (per milestone)**
-- All services run with `docker compose up` and expose documented ports.
-- Auth flow: valid token needed; invalid/missing token returns 401.
-- Ordering: gateway responds <2s with ack; eventual processing completes and notifications arrive in UI.
-- Stock safety: no oversell under concurrent load (automated concurrency test).
-- Observability: health endpoints and metrics present for each service.
-- CI: tests run on push to `main`; build fails on test failures.
-
-**Testing Plan**
-- **Unit tests**: Order validation, stock deduction logic.
-- **Integration tests**: Gateway→Stock cache behavior, end-to-end order placement to Kitchen processing.
-- **Load test**: Simulate Ramadan rush (hundreds of concurrent orders) to validate stability and DB contention.
-- **Chaos test**: Programmatically kill a service and confirm system recovers and notifications/errors handled gracefully.
-
-**CI/CD**
-- Use GitHub Actions (or GitLab CI) to run unit tests, lint, and build container images. Example pipelines:
-  - `push` to feature branches: run tests and build images.
-  - `push` to `main`: run tests, build images, and optionally push to registry.
-
-**Observability & Monitoring**
-- Expose `/health` and `/metrics` on each service.
-- Collect metrics with Prometheus; dashboard with Grafana.
-- Logging: structured JSON logs (stdout) for aggregation.
-
-**Recommended Tech Stacks (best-fit options)**
-- **Primary (fast iteration + rich ecosystem)**:
-  - Backend: Node.js + NestJS or Express (TypeScript)
-  - Async: BullMQ (Redis) or RabbitMQ for queues
-  - Cache: Redis
-  - DB: PostgreSQL
-  - Frontend: React + Vite
-  - Real-time: WebSockets (Socket.IO or ws)
-  - Container/orchestration: Docker Compose (judges), Kubernetes for cloud
-  - CI: GitHub Actions
-- 
-**Next Steps I can do now (pick one)**
-- **Phase 3 — Stock Service (2-3 days)**: Postgres-backed service with strict concurrency control (optimistic locking).
-- **Phase 4 — Kitchen Queue & Async Processing (2 days)**: Implement message queue consumer.
-- Implement real-time notifications for order status in **Notification Hub**.
+### 🔐 Testing Credentials
+| User Type | Username | Password |
+| --- | --- | --- |
+| **Student** | `student1` | `password123` |
+| **Admin** | `admin` | `adminpassword` |
 
 ---
 
-## Monorepo Layout
-```
+## 🏗️ Architecture Overiew
+
+### Services Stack
+- **Frontend** ([localhost:3000](http://localhost:3000)): Next.js 16 (React 19) SPA with real-time Socket.io and `react-hot-toast` notifications.
+- **Identity Provider** ([localhost:3001](http://localhost:3001)): Issues JWTs, employs Bcrypt hashing, and login rate-limiting.
+- **Order Gateway** ([localhost:3002](http://localhost:3002)): Entry point for orders; implements **"Fast-Fail" logic** via Redis.
+- **Stock Service** ([localhost:3003](http://localhost:3003)): Postgres-backed inventory with **Optimistic Locking** (row versioning).
+- **Kitchen Queue** (Internal): RabbitMQ consumer that finalizes transactions and manages fulfillment.
+- **Notification Hub** ([localhost:3005](http://localhost:3005)): WebSocket server for real-time user updates.
+
+### Persistent Stores
+- **PostgreSQL**: Source of truth for inventory and orders.
+- **Redis**: High-speed cache for fast-fail stock checks and order gateway performance.
+- **RabbitMQ**: Message broker for asynchronous, decoupled order processing.
+
+---
+
+## 🍱 Real-Time Order Flow
+
+1.  **Fast-Fail Check**: Gateway checks the **Redis Cache** immediately. If stock is 0, the order is rejected in `<50ms`.
+2.  **Async Acceptance**: If stock exists, the order is enqueued to **RabbitMQ** and an `HTTP 202 Accepted` is returned to the user in `<2s`.
+3.  **Kitchen Processing**: The **Kitchen Worker** consumes the message, calls the **Stock Service** to perform an atomic Postgres update with optimistic locking.
+4.  **Real-Time Update**: Once stock is confirmed, a message is sent to the **Notification Hub**, which pushes a **Socket.io** event to the student's dashboard.
+
+---
+
+## 📂 Project Structure
+
+```text
 /services
-  /frontend           - Next.js SPA
-  /identity-provider  - AuthN/AuthZ service
-  /order-gateway      - API Gateway
-  /stock-service      - Inventory management
-  /kitchen-queue      - Order processing worker
-  /notification-hub   - Real-time updates
-/docker-compose.yml   - Orchestrates services and data stores (Postgres, Redis, RabbitMQ)
-/.github/workflows    - CI pipeline
+  /frontend           - Next.js SPA (Student Dashboard)
+  /identity-provider  - AuthN/AuthZ (JWT issuance)
+  /order-gateway      - Fast-Fail Gatekeeper & Cache management
+  /stock-service      - Postgres Inventory (Optimistic Locking)
+  /kitchen-queue      - Async worker (RabbitMQ consumer)
+  /notification-hub   - Real-time Socket.io server
+/docker-compose.yml   - Full stack orchestration
+/.github/workflows    - CI/CD pipeline (Jest tests & Docker builds)
 ```
 
-## Getting Started
-To start the entire system and its dependencies:
-```bash
-docker compose up --build
+## 🧪 Observability & Health
+
+Every service exposes a `/health` endpoint for monitoring:
+- **Identity**: `http://localhost:3001/health`
+- **Gateway**: `http://localhost:3002/health`
+- **Stock**: `http://localhost:3003/health` (Checks DB + Redis connection)
+
+**RabbitMQ Management UI**: [http://localhost:15672](http://localhost:15672) (User: `guest`, Pass: `guest`)
+
+---
+
+## 🛠️ Implementation Details
+
+### **Fast-Fail with Redis**
+The Gateway doesn't wait for the database. It queries Redis for instant inventory verification, preventing database contention during peak load.
+
+### **Optimistic Locking**
+The Stock Service uses Sequelize `version: true`. Every stock reduction validates that no other worker has modified the row simultaneously.
+```javascript
+// if version differs from memory, Postgres rejects the UPDATE automatically
+await item.save(); 
 ```
 
-Access:
-- Frontend: http://localhost:3000
-- RabbitMQ Management: http://localhost:15672
+### **Resilience & CI**
+- **Dockerized**: 9 containers isolated by specialized networks.
+- **GitHub Actions**: Automated pipeline runs Jest/Supertest suites on every push to `main`.
+- **Node 20 Support**: Fully migrated to Node 20-alpine for security and Next.js 16 compatibility.
 
 CI pipeline is configured to build and test each service on every push to the `main` branch.
 
