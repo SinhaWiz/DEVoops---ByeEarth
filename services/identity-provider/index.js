@@ -12,13 +12,13 @@ const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_dev_key';
 // Mock users for development
 const mockUsers = [
   {
-    id: 'student-123',
-    username: 'student',
+    userId: 'student-123',
+    username: 'student1',
     passwordHash: bcrypt.hashSync('password123', 10),
     role: 'student'
   },
   {
-    id: 'admin-456',
+    userId: 'admin-456',
     username: 'admin',
     passwordHash: bcrypt.hashSync('adminpassword', 10),
     role: 'admin'
@@ -57,14 +57,14 @@ app.post('/login', loginLimiter, async (req, res) => {
 
   // Generate JWT
   const token = jwt.sign(
-    { userId: user.id, username: user.username, role: user.role },
+    { userId: user.userId, username: user.username, role: user.role },
     JWT_SECRET,
     { expiresIn: '1h' }
   );
 
   res.status(200).json({
     token,
-    user: { id: user.id, username: user.username, role: user.role }
+    user: { userId: user.userId, username: user.username, role: user.role }
   });
 });
 
