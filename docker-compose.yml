@@ -30,8 +30,12 @@ services:
       - "3002:3002"
     environment:
       - PORT=3002
+      - REDIS_URL=redis://db-redis:6379
+      - RABBITMQ_URL=amqp://mq-rabbitmq:5672
+      - JWT_SECRET=super_secret_dev_key
     depends_on:
       - db-redis
+      - mq-rabbitmq
       - identity-provider
 
   stock-service:
@@ -42,6 +46,11 @@ services:
       - "3003:3003"
     environment:
       - PORT=3003
+      - PGHOST=db-postgres
+      - PGUSER=dev
+      - PGPASSWORD=devpassword
+      - PGDATABASE=cafeteria
+      - REDIS_URL=redis://db-redis:6379
     depends_on:
       - db-postgres
       - db-redis
@@ -54,6 +63,7 @@ services:
       - "3004:3004"
     environment:
       - PORT=3004
+      - RABBITMQ_URL=amqp://mq-rabbitmq:5672
     depends_on:
       - mq-rabbitmq
 
