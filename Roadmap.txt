@@ -1,0 +1,9 @@
+**Implementation Plan (Milestones & Tasks)**
+- **Phase 0 — Repo & infra (1 day)**: Create monorepo layout, `docker-compose.yml`, basic CI config (GitHub Actions). Acceptance: `docker compose up` starts empty services; CI pipeline created.
+- **Phase 1 — Identity & Auth (1-2 days)**: Implement Identity Provider (JWT issuance, login rate-limiter). Tests: auth token issuance and protected-route rejection (401).
+- **Phase 2 — Order Gateway & Cache (2 days)**: Gateway endpoints, token validation middleware, Redis cache check for stock; immediate rejection if cache shows zero. Tests: gateway rejects unauthorized and rejects zero-stock quickly.
+- **Phase 3 — Stock Service (2-3 days)**: Postgres-backed service with strict concurrency control (optimistic locking via row version or SELECT...FOR UPDATE where appropriate). Expose health & metrics. Tests: concurrent stock deductions, idempotency behavior.
+- **Phase 4 — Kitchen Queue & Async Processing (2 days)**: Implement message queue consumer, immediate order ack (<2s) and separate processing job (3-7s). Ensure retry & idempotency. Tests: ack time, eventual processing.
+- **Phase 5 — Notification Hub & UI (2-3 days)**: WebSocket-based real-time updates; SPA (React/Vite) that logs in, places order, shows status funnel. Admin dashboard shows service health, metrics, and chaos toggle endpoints.
+- **Phase 6 — Observability & CI (1-2 days)**: Add health/metrics endpoints (Prometheus metrics format), structured logs, Grafana dashboards (optional). Complete CI pipeline to run unit tests and linter on push.
+- **Phase 7 — Hardening & Bonus (1-2 days)**: Add rate-limiting, chaos experiments, container readiness probes, automated alerts (e.g., email/Slack) for gateway latency breaches, optional cloud deploy
