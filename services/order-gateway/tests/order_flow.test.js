@@ -2,87 +2,96 @@ const request = require('supertest');
 const app = require('../index');
 const jwt = require('jsonwebtoken');
 
-// Mock Redis and MQ because we are running in a CI environment
+// Mock dependencies
 jest.mock('redis', () => ({
   createClient: jest.fn().mockReturnValue({
     on: jest.fn(),
     connect: jest.fn(),
     get: jest.fn(),
     set: jest.fn(),
-    quit: jest.fn(),
-  }),
+    disconnect: jest.fn()
+  })
 }));
 
 jest.mock('amqplib', () => ({
   connect: jest.fn().mockResolvedValue({
     createChannel: jest.fn().mockResolvedValue({
       assertQueue: jest.fn(),
-      sendToQueue: jest.fn(),
-    }),
-  }),
+      sendToQueue: jest.fn()
+    })
+  })
 }));
 
-const redis = require('redis');
-const amqp = require('amqplib');
-const redisClient = redis.createClient();
+const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_dev_key';
 
-const JWT_SECRET = 'super_secret_dev_key';
-const validToken = jwt.sign(
-  { userId: 'student-123', username: 'student', role: 'student' },
-  JWT_SECRET
-);
+describe('Order Gateway - Order Flow (Phase 2)', () => {
+  let redisClientMock;
+  let token;
 
-describe('Order Gateway - Phase 2 Order Flow', () => {
-
-  beforeEach(() => {
-    jest.clearAllMocks();
+  beforeAll(() => {
+    // Get the mock instance
+    const { createClient } = require('redis');
+    redisClientMock = createClient();
+    
+    // Valid token
+    token = jwt.sign(
+      { userId: 'student-123', username: 'student', role: 'student' },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
   });
 
-  it('should reject an order instantly if stock is missing (null) in Redis', async () => {
-    redisClient.get.mockResolvedValue(null);
+  describe('POST /order with Fast-Fail Cache Check', () => {
 
-    const response = await request(app)
-      .post('/order')
-      .set('Authorization', `Bearer ${validToken}`)
-      .send({ itemId: 'pizza-1' });
+    it('should reject when item is out of stock (Redis returns 0)', async () => {
+      redisClientMock.get.mockResolvedValue('0');
 
-    expect(response.status).toBe(422);
-    expect(response.body.error).toMatch(/not found in inventory cache/);
-  });
+      const response = await request(app)
+        .post('/order')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ itemId: 'spaghetti', quantity: 2 });
 
-  it('should reject an order instantly if stock is 0 in Redis', async () => {
-    redisClient.get.mockResolvedValue('0');
+      expect(response.status).toBe(422);
+      expect(response.body.error).toContain('rejected: Item out of stock');
+      expect(response.body.fastRejection).toBe(true);
+    });
 
-    const response = await request(app)
-      .post('/order')
-      .set('Authorization', `Bearer ${validToken}`)
-      .send({ itemId: 'pizza-1', quantity: 1 });
+    it('should reject when item is missing in cache (Redis returns null)', async () => {
+      redisClientMock.get.mockResolvedValue(null);
 
-    expect(response.status).toBe(422);
-    expect(response.body.error).toBe('Stock exhausted');
-  });
+      const response = await request(app)
+        .post('/order')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ itemId: 'unknown-item' });
 
-  it('should accept an order and return 202 if stock is available', async () => {
-    redisClient.get.mockResolvedValue('10');
+      expect(response.status).toBe(422);
+      expect(response.body.fastRejection).toBe(true);
+    });
 
-    const response = await request(app)
-      .post('/order')
-      .set('Authorization', `Bearer ${validToken}`)
-      .send({ itemId: 'pizza-1', quantity: 2 });
+    it('should accept when item has stock (Redis returns > 0)', async () => {
+      redisClientMock.get.mockResolvedValue('50');
 
-    expect(response.status).toBe(202);
-    expect(response.body.message).toBe('Order received and being validated');
-    expect(response.body).toHaveProperty('orderId');
-  });
+      const response = await request(app)
+        .post('/order')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ itemId: 'spaghetti', quantity: 1 });
 
-  it('should return 400 if itemId is missing from request', async () => {
-    const response = await request(app)
-      .post('/order')
-      .set('Authorization', `Bearer ${validToken}`)
-      .send({ quantity: 1 });
+      expect(response.status).toBe(202);
+      expect(response.body.message).toBe('Order received and being processed');
+      expect(response.body.status).toBe('accepted');
+      expect(response.body).toHaveProperty('orderId');
+    });
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe('itemId is required');
+    it('should return 400 when itemId is missing', async () => {
+        const response = await request(app)
+          .post('/order')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ quantity: 1 });
+  
+        expect(response.status).toBe(400);
+        expect(response.body.error).toBe('itemId is required');
+      });
+
   });
 
 });
