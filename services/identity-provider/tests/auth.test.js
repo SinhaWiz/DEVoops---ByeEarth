@@ -8,22 +8,22 @@ describe('Identity Provider - Auth Flow', () => {
     it('should issue a JWT token with valid credentials', async () => {
       const response = await request(app)
         .post('/login')
-        .send({ username: 'student', password: 'password123' });
+        .send({ username: 'student1', password: 'password123' });
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('token');
-      expect(response.body.user.username).toBe('student');
+      expect(response.body.user.username).toBe('student1');
 
       // Verify the token structure
       const decoded = jwt.decode(response.body.token);
-      expect(decoded.username).toBe('student');
+      expect(decoded.username).toBe('student1');
       expect(decoded.role).toBe('student');
     });
 
     it('should return 401 for invalid credentials', async () => {
       const response = await request(app)
         .post('/login')
-        .send({ username: 'student', password: 'wrong-password' });
+        .send({ username: 'student1', password: 'wrong-password' });
 
       expect(response.status).toBe(401);
       expect(response.body).toHaveProperty('error', 'Invalid credentials');
@@ -32,7 +32,7 @@ describe('Identity Provider - Auth Flow', () => {
     it('should return 400 for missing credentials', async () => {
       const response = await request(app)
         .post('/login')
-        .send({ username: 'student' }); // Missing password
+        .send({ username: 'student1' }); // Missing password
 
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty('error', 'Username and password required');
@@ -45,7 +45,7 @@ describe('Identity Provider - Auth Flow', () => {
     beforeAll(async () => {
       const loginRes = await request(app)
         .post('/login')
-        .send({ username: 'student', password: 'password123' });
+        .send({ username: 'student1', password: 'password123' });
       validToken = loginRes.body.token;
     });
 
@@ -56,7 +56,7 @@ describe('Identity Provider - Auth Flow', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.valid).toBe(true);
-      expect(response.body.decoded.username).toBe('student');
+      expect(response.body.decoded.username).toBe('student1');
     });
 
     it('should return 401 for an invalid token', async () => {
