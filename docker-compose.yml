@@ -65,9 +65,11 @@ services:
       - PORT=3004
       - RABBITMQ_URL=amqp://mq-rabbitmq:5672
       - STOCK_SERVICE_URL=http://stock-service:3003
+      - REDIS_URL=redis://db-redis:6379
     depends_on:
       - mq-rabbitmq
       - stock-service
+      - db-redis
 
   notification-hub:
     build:
