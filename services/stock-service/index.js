@@ -80,6 +80,9 @@ const StockItem = sequelize.define('StockItem', {
 app.use(cors());
 app.use(express.json());
 
+// Chaos mode flag
+let chaosMode = false;
+
 // Helper: Sync Redis Cache with DB for an item
 async function syncRedis(id, quantity) {
   try {
@@ -95,11 +98,14 @@ async function syncRedis(id, quantity) {
 
 // Root route
 app.get('/', (req, res) => {
-  res.status(200).json({ service: 'stock-service', status: 'UP', endpoints: ['/health', '/metrics', '/stock/:id', '/stock/reduce', '/seed'] });
+  res.status(200).json({ service: 'stock-service', status: chaosMode ? 'DEGRADED' : 'UP', endpoints: ['/health', '/metrics', '/stock/:id', '/stock/reduce', '/seed', '/chaos'] });
 });
 
 // Health Check
 app.get('/health', async (req, res) => {
+  if (chaosMode) {
+    return res.status(503).json({ status: 'DOWN', service: 'stock-service', chaos: true });
+  }
   try {
     await sequelize.authenticate();
     res.status(200).json({ 
@@ -113,8 +119,28 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Chaos endpoint
+app.get('/chaos', (req, res) => {
+  res.status(200).json({ service: 'stock-service', chaosMode });
+});
+
+app.post('/chaos', (req, res) => {
+  const { enable } = req.body;
+  chaosMode = enable !== undefined ? !!enable : !chaosMode;
+  console.log(`[Chaos] stock-service chaos mode: ${chaosMode}`);
+  res.status(200).json({ service: 'stock-service', chaosMode });
+});
+
+// Chaos guard middleware
+const chaosGuard = (req, res, next) => {
+  if (chaosMode) {
+    return res.status(503).json({ error: 'Service in chaos mode', service: 'stock-service' });
+  }
+  next();
+};
+
 // GET Stock for an item
-app.get('/stock/:id', async (req, res) => {
+app.get('/stock/:id', chaosGuard, async (req, res) => {
   try {
     const item = await StockItem.findByPk(req.params.id);
     if (!item) {
@@ -127,7 +153,7 @@ app.get('/stock/:id', async (req, res) => {
 });
 
 // POST Reduce Stock (Atomic & Optimistic)
-app.post('/stock/reduce', async (req, res) => {
+app.post('/stock/reduce', chaosGuard, async (req, res) => {
   const { itemId, quantity } = req.body;
 
   if (!itemId || quantity === undefined) {
