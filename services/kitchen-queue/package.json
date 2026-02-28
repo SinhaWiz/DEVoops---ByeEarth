@@ -9,7 +9,8 @@
   "dependencies": {
     "amqplib": "^0.10.3",
     "axios": "^1.6.2",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "uuid": "^8.3.2"
   },
   "devDependencies": {
     "jest": "^29.7.0",
