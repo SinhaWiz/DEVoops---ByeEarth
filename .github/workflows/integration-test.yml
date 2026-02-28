@@ -18,7 +18,31 @@ jobs:
       - name: Build and start all services
         run: docker compose up -d --build
       - name: Wait for services to be healthy
-        run: sleep 15
+        run: |
+          echo "Waiting for services to be ready..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/health > /dev/null 2>&1 && \
+               curl -sf http://localhost:3002/health > /dev/null 2>&1 && \
+               curl -sf http://localhost:3003/health > /dev/null 2>&1 && \
+               curl -sf http://localhost:3005/health > /dev/null 2>&1; then
+              echo "All services are healthy!"
+              break
+            fi
+            echo "Attempt $i/30 - waiting 5s..."
+            sleep 5
+          done
+      - name: Run identity-provider integration tests
+        run: |
+          cd services/identity-provider
+          npm install
+          npx jest tests/integration.test.js
+      - name: Run order-gateway integration tests
+        env:
+          REDIS_URL: redis://localhost:6379
+        run: |
+          cd services/order-gateway
+          npm install
+          npx jest tests/integration.test.js
       - name: Run stock-service tests
         env:
           PGHOST: localhost
@@ -40,6 +64,15 @@ jobs:
           cd services/kitchen-queue
           npm install
           npm test
+      - name: Restart notification-hub for its tests
+        run: docker compose start notification-hub && sleep 5
+      - name: Run notification-hub integration tests
+        env:
+          RABBITMQ_URL: amqp://localhost:5672
+        run: |
+          cd services/notification-hub
+          npm install
+          npx jest tests/integration.test.js --forceExit
       - name: Show docker compose logs on failure
         if: failure()
         run: docker compose logs

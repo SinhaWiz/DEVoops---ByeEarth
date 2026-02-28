@@ -37,6 +37,11 @@ const loginLimiter = rateLimit({
 app.use(cors());
 app.use(express.json());
 
+// Root route
+app.get('/', (req, res) => {
+  res.status(200).json({ service: 'identity-provider', status: 'UP', endpoints: ['/health', '/login', '/verify'] });
+});
+
 // Main health endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'UP', service: 'identity-provider' });

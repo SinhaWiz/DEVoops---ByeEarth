@@ -31,6 +31,11 @@ async function connectMQ() {
   }
 }
 
+// Root route
+app.get('/', (req, res) => {
+  res.status(200).json({ service: 'order-gateway', status: 'UP', endpoints: ['/health', '/order', '/seed-stock'] });
+});
+
 // Main health endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'UP', service: 'order-gateway' });
