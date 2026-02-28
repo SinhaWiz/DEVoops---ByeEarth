@@ -93,17 +93,23 @@ async function syncRedis(id, quantity) {
   }
 }
 
+// Root route
+app.get('/', (req, res) => {
+  res.status(200).json({ service: 'stock-service', status: 'UP', endpoints: ['/health', '/metrics', '/stock/:id', '/stock/reduce', '/seed'] });
+});
+
 // Health Check
 app.get('/health', async (req, res) => {
   try {
     await sequelize.authenticate();
     res.status(200).json({ 
       status: 'UP', 
+      service: 'stock-service',
       database: 'connected',
       redis: redisClient.isOpen ? 'connected' : 'disconnected'
     });
   } catch (err) {
-    res.status(500).json({ status: 'DOWN', database: err.message });
+    res.status(503).json({ status: 'DOWN', service: 'stock-service', database: err.message });
   }
 });
 
@@ -196,7 +202,10 @@ async function init() {
     });
   } catch (err) {
     console.error('Failed to init Stock Service:', err.message);
-    process.exit(1);
+    // Start HTTP server anyway so /health can report status
+    app.listen(PORT, () => {
+      console.log(`Stock Service running on port ${PORT} (degraded - init failed)`);
+    });
   }
 }
 

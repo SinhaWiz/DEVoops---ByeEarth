@@ -19,6 +19,17 @@ const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
 const QUEUE_NAME = 'notifications_queue';
 
 app.use(cors());
+app.use(express.json());
+
+// Root route
+app.get('/', (req, res) => {
+  res.status(200).json({ service: 'notification-hub', status: 'UP', endpoints: ['/health'] });
+});
+
+// Health endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'UP', service: 'notification-hub' });
+});
 
 // Connection Handling
 io.on('connection', (socket) => {
