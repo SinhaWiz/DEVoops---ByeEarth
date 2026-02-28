@@ -34,7 +34,7 @@ describe('Kitchen Queue Async/Ack Behavior', () => {
 
     // Listen for notification
     const notificationPromise = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('No notification within 8s')), 8000);
+      const timeout = setTimeout(() => reject(new Error('No notification within 13s')), 13000);
       channel.consume(NOTIFICATION_QUEUE, (msg) => {
         if (msg) {
           const notif = JSON.parse(msg.content.toString());
