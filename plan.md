@@ -24,7 +24,7 @@ Here's the full assessment:
 |---|------------|----------------|
 | **4** | **Health Endpoints** on every service (200 OK / 503) | **DONE** — All 5 services now have `/health` endpoints. |
 | **4** | **Metrics Endpoints** on every service | **DONE** — All 5 services now expose `/metrics` via `prom-client` (Prometheus format) with `collectDefaultMetrics()` plus service-specific custom counters. |
-| **5** | **Student Journey UI** — login → order → live status tracker (Pending → Stock Verified → In Kitchen → Ready) | Login and ordering work, but **`fetchStock()` is fake** (hardcoded values), and there is **no status progression tracker** (Pending → Verified → Kitchen → Ready). Notifications just appear as alerts. |
+| **5** | **Student Journey UI** — login → order → live status tracker (Pending → Stock Verified → In Kitchen → Ready) | **DONE** — `fetchStock()` fetches real data from stock-service via Next.js proxy. Order status tracker shows real-time progression (Pending → In Kitchen → Stock Verified → Ready) driven by Socket.io notifications from kitchen-queue. |
 | **5** | **Admin Dashboard** — health grid, live metrics, chaos toggle | **DONE** — Moved to `app/admin/page.tsx` (accessible at `/admin`), includes all 5 services, health grid, chaos enable/recover controls, and collapsible Prometheus metrics. |
 | **3D** | Integration test coverage | **DONE** — Integration tests now exist for all 5 services (identity-provider, order-gateway, notification-hub, stock-service, kitchen-queue). |
 
@@ -33,7 +33,7 @@ Here's the full assessment:
 | # | Requirement | Status |
 |---|------------|--------|
 | **5 (Admin)** | **Chaos Toggle** — ability to "kill" a service and observe fault handling | **DONE** — All 5 services now have `GET /chaos` (status) and `POST /chaos` (toggle). Chaos mode returns 503 on `/health` and functional endpoints. Dashboard has Enable/Recover buttons. |
-| **5 (Student)** | **Live Status Tracker** — Pending → Stock Verified → In Kitchen → Ready progression | **Not implemented** — no status state machine or websocket updates for progression stages. |
+| **5 (Student)** | **Live Status Tracker** — Pending → Stock Verified → In Kitchen → Ready progression | **DONE** — Kitchen-queue publishes intermediate status notifications (in_kitchen, stock_verified, ready/rejected). Frontend page.tsx has a live order tracker with animated progress bars. |
 | **Bonus** | Cloud deployment | Not done |
 | **Bonus** | Visual alerts if gateway avg response time > 1s over 30s | Not done — no latency tracking or alerting |
 | **Bonus** | Rate limiting on Identity Provider — 3 login attempts/min per Student ID | **DONE** — Rate limiter updated to 3/min per username (Student ID) as specified. |
@@ -55,11 +55,11 @@ Here's the full assessment:
 6. ~~**Add `/chaos` endpoint to all services**~~ — ✅ Done. All 5 services have `GET /chaos` and `POST /chaos`. Chaos mode makes `/health` return 503 and blocks functional endpoints via `chaosGuard` middleware.
 7. ~~**Fix admin dashboard**~~ — ✅ Done. Now includes Identity Provider (all 5 services). Health grid shows colored status dots, chaos controls have Enable/Recover buttons, metrics use collapsible `<details>` for readability. Link to admin added from student page.
 
-### Priority 3 — Student UI Completeness
+### Priority 3 — Student UI Completeness ✅ COMPLETED
 
-8. **Fix `fetchStock()`** — query stock-service (via gateway or directly) for real stock quantities
-9. **Implement order status tracker** — add status state machine: Pending → Stock Verified → In Kitchen → Ready. Kitchen-queue should publish intermediate status updates to notification-hub.
-10. **Fix hardcoded localhost URLs** — use env vars or relative URLs with Next.js rewrites/proxy
+8. ~~**Fix `fetchStock()`**~~ — ✅ Done. Added `GET /stock` list endpoint to stock-service. Auto-seeds default menu items (spaghetti: 50, ramen: 30, pizza: 20) on first startup. Frontend fetches real stock via Next.js rewrite proxy. Menu shows live quantities and disables ordering for out-of-stock items.
+9. ~~**Implement order status tracker**~~ — ✅ Done. Kitchen-queue now publishes intermediate notifications: `in_kitchen` (when order picked up), `stock_verified` (after stock reduction), `ready`/`rejected` (final). Frontend has a live Order Tracker with animated progress bars showing Pending → In Kitchen → Stock Verified → Ready (or Rejected with red bar).
+10. ~~**Fix hardcoded localhost URLs**~~ — ✅ Done. Added Next.js rewrites in `next.config.ts` proxying `/api/{service-name}/*` to Docker-internal service URLs. Student page and admin dashboard both use relative URLs. Only Socket.io retains direct `localhost:3005` (WebSocket can't use HTTP proxy).
 
 ### Priority 4 — Test & CI Gaps ✅ COMPLETED
 
