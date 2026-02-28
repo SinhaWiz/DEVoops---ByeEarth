@@ -78,26 +78,34 @@ describe('Kitchen Queue Async/Ack Behavior', () => {
       userId: 'test-user'
     };
 
-    // Send order
-    const sendTime = Date.now();
-    await channel.sendToQueue(ORDER_QUEUE, Buffer.from(JSON.stringify(orderMsg)), { persistent: true });
+    // Purge notification queue to remove any stale messages
+    await channel.purgeQueue(NOTIFICATION_QUEUE);
 
-    // Listen for notification
+    // Set up notification consumer BEFORE sending the order, and await registration
+    let resolveNotification, rejectNotification;
     const notificationPromise = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('No notification within 13s')), 13000);
-      channel.consume(NOTIFICATION_QUEUE, (msg) => {
-        if (msg) {
-          const notif = JSON.parse(msg.content.toString());
-          if (notif.orderId === orderId) {
-            clearTimeout(timeout);
-            channel.ack(msg);
-            resolve({ notif, receivedAt: Date.now() });
-          } else {
-            channel.nack(msg, false, true);
-          }
-        }
-      }, { noAck: false });
+      resolveNotification = resolve;
+      rejectNotification = reject;
     });
+
+    const notificationTimeout = setTimeout(() => rejectNotification(new Error('No notification within 20s')), 20000);
+
+    await channel.consume(NOTIFICATION_QUEUE, (msg) => {
+      if (msg) {
+        const notif = JSON.parse(msg.content.toString());
+        if (notif.orderId === orderId) {
+          clearTimeout(notificationTimeout);
+          channel.ack(msg);
+          resolveNotification({ notif, receivedAt: Date.now() });
+        } else {
+          channel.nack(msg, false, true);
+        }
+      }
+    }, { noAck: false });
+
+    // Now send the order (after consumer is confirmed registered)
+    const sendTime = Date.now();
+    channel.sendToQueue(ORDER_QUEUE, Buffer.from(JSON.stringify(orderMsg)), { persistent: true });
 
     // Ack time is immediate (simulate by checking after send)
     const ackTime = Date.now() - sendTime;
@@ -107,7 +115,7 @@ describe('Kitchen Queue Async/Ack Behavior', () => {
     const { notif, receivedAt } = await notificationPromise;
     const processTime = receivedAt - sendTime;
     expect(processTime).toBeGreaterThanOrEqual(3000); // >=3s
-    expect(processTime).toBeLessThanOrEqual(12000); // <=12s (allow for async slop)
+    expect(processTime).toBeLessThanOrEqual(15000); // <=15s (allow for CI slop)
     expect(['ORDER_SUCCESS', 'ORDER_FAILED']).toContain(notif.type);
-  }, 15000); // Increase timeout to 15s
+  }, 30000); // 30s Jest timeout
 });

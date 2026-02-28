@@ -9,40 +9,36 @@ on:
 jobs:
   integration-test:
     runs-on: ubuntu-latest
-    services:
-      rabbitmq:
-        image: rabbitmq:3-management-alpine
-        ports:
-          - 5672:5672
-          - 15672:15672
-      postgres:
-        image: postgres:15-alpine
-        ports:
-          - 5432:5432
-        env:
-          POSTGRES_USER: dev
-          POSTGRES_PASSWORD: devpassword
-          POSTGRES_DB: cafeteria
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
     steps:
       - uses: actions/checkout@v3
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install Docker Compose
-        run: sudo apt-get update && sudo apt-get install -y docker-compose
       - name: Build and start all services
         run: docker compose up -d --build
       - name: Wait for services to be healthy
         run: sleep 15
       - name: Run stock-service tests
-        run: npm test --prefix services/stock-service
+        env:
+          PGHOST: localhost
+          PGUSER: dev
+          PGPASSWORD: devpassword
+          PGDATABASE: cafeteria
+          PGPORT: "5432"
+          REDIS_URL: redis://localhost:6379
+        run: |
+          cd services/stock-service
+          npm install
+          npm test
       - name: Run kitchen-queue tests
-        run: npm test --prefix services/kitchen-queue
+        env:
+          RABBITMQ_URL: amqp://localhost:5672
+          REDIS_URL: redis://localhost:6379
+        run: |
+          cd services/kitchen-queue
+          npm install
+          npm test
       - name: Show docker compose logs on failure
         if: failure()
         run: docker compose logs
