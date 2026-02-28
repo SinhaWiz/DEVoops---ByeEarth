@@ -139,6 +139,16 @@ const chaosGuard = (req, res, next) => {
   next();
 };
 
+// GET list of all stock items
+app.get('/stock', chaosGuard, async (req, res) => {
+  try {
+    const items = await StockItem.findAll();
+    res.status(200).json(items.map(i => ({ id: i.id, name: i.name, quantity: i.quantity })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET Stock for an item
 app.get('/stock/:id', chaosGuard, async (req, res) => {
   try {
@@ -222,6 +232,27 @@ async function init() {
     await redisClient.connect();
     await sequelize.sync({ alter: true }); 
     console.log('Postgres Database & Redis Cache synced');
+
+    // Auto-seed default menu items if table is empty
+    const count = await StockItem.count();
+    if (count === 0) {
+      const defaultItems = [
+        { id: 'spaghetti', name: 'Spaghetti Carbonara', quantity: 50 },
+        { id: 'ramen', name: 'Spicy Miso Ramen', quantity: 30 },
+        { id: 'pizza', name: 'Pepperoni Pizza', quantity: 20 },
+      ];
+      for (const item of defaultItems) {
+        await StockItem.upsert(item);
+        await syncRedis(item.id, item.quantity);
+      }
+      console.log('Default stock items seeded');
+    } else {
+      // Sync existing items to Redis on startup
+      const items = await StockItem.findAll();
+      for (const item of items) {
+        await syncRedis(item.id, item.quantity);
+      }
+    }
     
     app.listen(PORT, () => {
       console.log(`Stock Service running on port ${PORT}`);

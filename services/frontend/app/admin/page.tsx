@@ -11,11 +11,11 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(false);
 
   const SERVICES = [
-    { name: "Identity Provider", url: "http://localhost:3001" },
-    { name: "Order Gateway", url: "http://localhost:3002" },
-    { name: "Stock Service", url: "http://localhost:3003" },
-    { name: "Kitchen Queue", url: "http://localhost:3004" },
-    { name: "Notification Hub", url: "http://localhost:3005" },
+    { name: "Identity Provider", url: "/api/identity-provider" },
+    { name: "Order Gateway", url: "/api/order-gateway" },
+    { name: "Stock Service", url: "/api/stock-service" },
+    { name: "Kitchen Queue", url: "/api/kitchen-queue" },
+    { name: "Notification Hub", url: "/api/notification-hub" },
   ];
 
   const fetchAllHealth = useCallback(async () => {
