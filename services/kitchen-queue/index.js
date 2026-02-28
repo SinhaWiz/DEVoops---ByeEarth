@@ -44,6 +44,16 @@ async function startWorker() {
 
         // 1. Immediate ack (simulate HTTP 202 to user)
         channel.ack(msg);
+
+        // Send "in_kitchen" status notification
+        channel.sendToQueue(NOTIFICATION_QUEUE, Buffer.from(JSON.stringify({
+          userId,
+          orderId,
+          type: 'ORDER_STATUS',
+          status: 'in_kitchen',
+          message: `Your order for ${itemId} is being processed in the kitchen.`
+        })), { persistent: true });
+
         // 2. Simulate async processing (3-7s delay)
         const processingDelay = 3000 + Math.floor(Math.random() * 4000); // 3-7s
         setTimeout(async () => {
@@ -65,13 +75,23 @@ async function startWorker() {
               // Mark as processed (idempotency)
               await redisClient.set(idempotencyKey, '1', { EX: 24 * 60 * 60 }); // 1 day expiry
               ordersProcessedCounter.inc();
-              // Notify User of Success
+
+              // Send "stock_verified" status
+              channel.sendToQueue(NOTIFICATION_QUEUE, Buffer.from(JSON.stringify({
+                userId,
+                orderId,
+                type: 'ORDER_STATUS',
+                status: 'stock_verified',
+                message: `Stock verified for your order.`
+              })), { persistent: true });
+
+              // Notify User — Order Ready
               const successNotification = {
                 userId,
                 orderId,
                 type: 'ORDER_SUCCESS',
-                message: `Your order for ${itemId} has been confirmed. Remaining stock: ${response.data.newQuantity}`,
-                status: 'confirmed'
+                message: `Your order for ${itemId} is ready! Remaining stock: ${response.data.newQuantity}`,
+                status: 'ready'
               };
               channel.sendToQueue(NOTIFICATION_QUEUE, Buffer.from(JSON.stringify(successNotification)), { persistent: true });
             }
