@@ -36,6 +36,8 @@ jobs:
           cd services/identity-provider
           npm install
           npx jest tests/integration.test.js --testPathIgnorePatterns='[]'
+      - name: Reset identity-provider rate limiter
+        run: docker compose restart identity-provider && sleep 3
       - name: Run order-gateway integration tests
         env:
           REDIS_URL: redis://localhost:6379
