@@ -25,14 +25,14 @@ Here's the full assessment:
 | **4** | **Health Endpoints** on every service (200 OK / 503) | **DONE** — All 5 services now have `/health` endpoints. |
 | **4** | **Metrics Endpoints** on every service | **DONE** — All 5 services now expose `/metrics` via `prom-client` (Prometheus format) with `collectDefaultMetrics()` plus service-specific custom counters. |
 | **5** | **Student Journey UI** — login → order → live status tracker (Pending → Stock Verified → In Kitchen → Ready) | Login and ordering work, but **`fetchStock()` is fake** (hardcoded values), and there is **no status progression tracker** (Pending → Verified → Kitchen → Ready). Notifications just appear as alerts. |
-| **5** | **Admin Dashboard** — health grid, live metrics, chaos toggle | Component exists at admin-dashboard.tsx but is **unreachable** — it's not a Next.js page route. Even if reachable, chaos endpoints don't exist yet. |
+| **5** | **Admin Dashboard** — health grid, live metrics, chaos toggle | **DONE** — Moved to `app/admin/page.tsx` (accessible at `/admin`), includes all 5 services, health grid, chaos enable/recover controls, and collapsible Prometheus metrics. |
 | **3D** | Integration test coverage | **DONE** — Integration tests now exist for all 5 services (identity-provider, order-gateway, notification-hub, stock-service, kitchen-queue). |
 
 ### What's NOT DONE (Missing Entirely)
 
 | # | Requirement | Status |
 |---|------------|--------|
-| **5 (Admin)** | **Chaos Toggle** — ability to "kill" a service and observe fault handling | **No `/chaos` endpoint** exists on any service. Dashboard has buttons but they 404. |
+| **5 (Admin)** | **Chaos Toggle** — ability to "kill" a service and observe fault handling | **DONE** — All 5 services now have `GET /chaos` (status) and `POST /chaos` (toggle). Chaos mode returns 503 on `/health` and functional endpoints. Dashboard has Enable/Recover buttons. |
 | **5 (Student)** | **Live Status Tracker** — Pending → Stock Verified → In Kitchen → Ready progression | **Not implemented** — no status state machine or websocket updates for progression stages. |
 | **Bonus** | Cloud deployment | Not done |
 | **Bonus** | Visual alerts if gateway avg response time > 1s over 30s | Not done — no latency tracking or alerting |
@@ -49,11 +49,11 @@ Here's the full assessment:
 3. ~~**Add `/metrics` to identity-provider**~~ — ✅ Done. `prom-client` with custom counters: `login_success_total`, `login_failed_total`, `token_verify_total`, `http_request_duration_seconds`
 4. ~~**Add `/metrics` to order-gateway**~~ — ✅ Done. `prom-client` with custom counters: `orders_accepted_total`, `orders_rejected_total`, `http_request_duration_seconds`
 
-### Priority 2 — Admin Dashboard & Chaos
+### Priority 2 — Admin Dashboard & Chaos ✅ COMPLETED
 
-5. **Make admin dashboard routable** — move to `app/admin/page.tsx` so it's accessible at `/admin`
-6. **Add `/chaos` endpoint to all services** — e.g. `POST /chaos` triggers `process.exit(1)` or sets a flag that makes the service return 503
-7. **Fix admin dashboard** to include identity-provider in service list
+5. ~~**Make admin dashboard routable**~~ — ✅ Done. Moved to `app/admin/page.tsx`, accessible at `/admin`. Old `admin-dashboard.tsx` deleted.
+6. ~~**Add `/chaos` endpoint to all services**~~ — ✅ Done. All 5 services have `GET /chaos` and `POST /chaos`. Chaos mode makes `/health` return 503 and blocks functional endpoints via `chaosGuard` middleware.
+7. ~~**Fix admin dashboard**~~ — ✅ Done. Now includes Identity Provider (all 5 services). Health grid shows colored status dots, chaos controls have Enable/Recover buttons, metrics use collapsible `<details>` for readability. Link to admin added from student page.
 
 ### Priority 3 — Student UI Completeness
 

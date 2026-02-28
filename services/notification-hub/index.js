@@ -35,14 +35,32 @@ const socketConnectionsGauge = new promClient.Gauge({
 app.use(cors());
 app.use(express.json());
 
+// Chaos mode flag
+let chaosMode = false;
+
 // Root route
 app.get('/', (req, res) => {
-  res.status(200).json({ service: 'notification-hub', status: 'UP', endpoints: ['/health', '/metrics'] });
+  res.status(200).json({ service: 'notification-hub', status: chaosMode ? 'DEGRADED' : 'UP', endpoints: ['/health', '/metrics', '/chaos'] });
 });
 
 // Health endpoint
 app.get('/health', (req, res) => {
+  if (chaosMode) {
+    return res.status(503).json({ status: 'DOWN', service: 'notification-hub', chaos: true });
+  }
   res.status(200).json({ status: 'UP', service: 'notification-hub' });
+});
+
+// Chaos endpoint
+app.get('/chaos', (req, res) => {
+  res.status(200).json({ service: 'notification-hub', chaosMode });
+});
+
+app.post('/chaos', (req, res) => {
+  const { enable } = req.body;
+  chaosMode = enable !== undefined ? !!enable : !chaosMode;
+  console.log(`[Chaos] notification-hub chaos mode: ${chaosMode}`);
+  res.status(200).json({ service: 'notification-hub', chaosMode });
 });
 
 // Metrics endpoint

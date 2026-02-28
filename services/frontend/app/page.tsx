@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import toast, { Toaster } from 'react-hot-toast';
+import Link from 'next/link';
 
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
@@ -179,12 +180,20 @@ export default function Home() {
           <h1 className="text-2xl font-bold dark:text-white">DEVoops Dashboard</h1>
           <p className="text-sm text-gray-500">User ID: {userId}</p>
         </div>
-        <button 
-          onClick={() => setToken(null)}
-          className="px-4 py-2 border rounded text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 dark:text-gray-300 transition-all"
-        >
-          Logout
-        </button>
+        <div className="flex gap-3">
+          <Link
+            href="/admin"
+            className="px-4 py-2 border rounded text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 dark:text-gray-300 transition-all"
+          >
+            Admin
+          </Link>
+          <button 
+            onClick={() => setToken(null)}
+            className="px-4 py-2 border rounded text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 dark:text-gray-300 transition-all"
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
       <main className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">

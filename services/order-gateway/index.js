@@ -35,6 +35,9 @@ const httpRequestDuration = new promClient.Histogram({
 app.use(cors());
 app.use(express.json());
 
+// Chaos mode flag
+let chaosMode = false;
+
 // Redis Client Connection
 const redisClient = createClient({ url: REDIS_URL });
 redisClient.on('error', (err) => console.log('Redis Client Error', err));
@@ -54,12 +57,27 @@ async function connectMQ() {
 
 // Root route
 app.get('/', (req, res) => {
-  res.status(200).json({ service: 'order-gateway', status: 'UP', endpoints: ['/health', '/order', '/seed-stock', '/metrics'] });
+  res.status(200).json({ service: 'order-gateway', status: chaosMode ? 'DEGRADED' : 'UP', endpoints: ['/health', '/order', '/seed-stock', '/metrics', '/chaos'] });
 });
 
 // Main health endpoint
 app.get('/health', (req, res) => {
+  if (chaosMode) {
+    return res.status(503).json({ status: 'DOWN', service: 'order-gateway', chaos: true });
+  }
   res.status(200).json({ status: 'UP', service: 'order-gateway' });
+});
+
+// Chaos endpoint
+app.get('/chaos', (req, res) => {
+  res.status(200).json({ service: 'order-gateway', chaosMode });
+});
+
+app.post('/chaos', (req, res) => {
+  const { enable } = req.body;
+  chaosMode = enable !== undefined ? !!enable : !chaosMode;
+  console.log(`[Chaos] order-gateway chaos mode: ${chaosMode}`);
+  res.status(200).json({ service: 'order-gateway', chaosMode });
 });
 
 // Metrics endpoint
@@ -89,8 +107,16 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
+// Chaos guard middleware
+const chaosGuard = (req, res, next) => {
+  if (chaosMode) {
+    return res.status(503).json({ error: 'Service in chaos mode', service: 'order-gateway' });
+  }
+  next();
+};
+
 // Implementation for Phase 2: Order with Fast-Fail (Redis check)
-app.post('/order', authMiddleware, async (req, res) => {
+app.post('/order', chaosGuard, authMiddleware, async (req, res) => {
   const { itemId, quantity = 1 } = req.body;
 
   if (!itemId) {

@@ -124,11 +124,17 @@ async function startWorker() {
 // --- HTTP Server for health checks & metrics ---
 const express = require('express');
 const promClient = require('prom-client');
+const cors = require('cors');
 const httpApp = express();
 const HTTP_PORT = process.env.PORT || 3004;
 
+httpApp.use(cors());
+
 // Prometheus Metrics Setup
 promClient.collectDefaultMetrics();
+
+// Chaos mode flag
+let chaosMode = false;
 
 const ordersProcessedCounter = new promClient.Counter({
   name: 'orders_processed_total',
@@ -146,15 +152,31 @@ const ordersRetriedCounter = new promClient.Counter({
 });
 
 httpApp.get('/', (req, res) => {
-  res.status(200).json({ service: 'kitchen-queue', status: 'UP', endpoints: ['/health', '/metrics'] });
+  res.status(200).json({ service: 'kitchen-queue', status: chaosMode ? 'DEGRADED' : 'UP', endpoints: ['/health', '/metrics', '/chaos'] });
 });
 
 httpApp.get('/health', (req, res) => {
+  if (chaosMode) {
+    return res.status(503).json({ status: 'DOWN', service: 'kitchen-queue', chaos: true });
+  }
   res.status(200).json({
     status: 'UP',
     service: 'kitchen-queue',
     redis: redisClient.isOpen ? 'connected' : 'disconnected'
   });
+});
+
+httpApp.use(require('express').json());
+
+httpApp.get('/chaos', (req, res) => {
+  res.status(200).json({ service: 'kitchen-queue', chaosMode });
+});
+
+httpApp.post('/chaos', (req, res) => {
+  const { enable } = req.body;
+  chaosMode = enable !== undefined ? !!enable : !chaosMode;
+  console.log(`[Chaos] kitchen-queue chaos mode: ${chaosMode}`);
+  res.status(200).json({ service: 'kitchen-queue', chaosMode });
 });
 
 httpApp.get('/metrics', async (req, res) => {
