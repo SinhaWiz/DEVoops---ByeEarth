@@ -35,14 +35,14 @@ jobs:
         run: |
           cd services/identity-provider
           npm install
-          npx jest tests/integration.test.js
+          npx jest tests/integration.test.js --testPathIgnorePatterns='[]'
       - name: Run order-gateway integration tests
         env:
           REDIS_URL: redis://localhost:6379
         run: |
           cd services/order-gateway
           npm install
-          npx jest tests/integration.test.js
+          npx jest tests/integration.test.js --testPathIgnorePatterns='[]'
       - name: Run stock-service tests
         env:
           PGHOST: localhost
@@ -72,7 +72,7 @@ jobs:
         run: |
           cd services/notification-hub
           npm install
-          npx jest tests/integration.test.js --forceExit
+          npx jest tests/integration.test.js --testPathIgnorePatterns='[]' --forceExit
       - name: Show docker compose logs on failure
         if: failure()
         run: docker compose logs
