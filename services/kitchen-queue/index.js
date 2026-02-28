@@ -124,8 +124,11 @@ async function startWorker() {
 // --- HTTP Server for health checks & metrics ---
 const express = require('express');
 const promClient = require('prom-client');
+const cors = require('cors');
 const httpApp = express();
 const HTTP_PORT = process.env.PORT || 3004;
+
+httpApp.use(cors());
 
 // Prometheus Metrics Setup
 promClient.collectDefaultMetrics();
