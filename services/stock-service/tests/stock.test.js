@@ -1,23 +1,3 @@
-  it('should be idempotent for repeated identical deduction requests', async () => {
-    // Seed a new item for idempotency test
-    await request(app)
-      .post('/seed')
-      .send({ items: [{ id: 'idempotent-item', name: 'Idempotent Item', quantity: 4 }] });
-
-    // First deduction: should succeed
-    const res1 = await request(app)
-      .post('/stock/reduce')
-      .send({ itemId: 'idempotent-item', quantity: 2 });
-    expect(res1.statusCode).toEqual(200);
-    expect(res1.body.newQuantity).toEqual(2);
-
-    // Repeat the same deduction: should fail (insufficient stock if not idempotent, or 409/422)
-    const res2 = await request(app)
-      .post('/stock/reduce')
-      .send({ itemId: 'idempotent-item', quantity: 2 });
-    // Acceptable: either 200 with same result (if idempotent) or 422/409 (if not)
-    expect([200, 409, 422]).toContain(res2.statusCode);
-  });
 const request = require('supertest');
 const { app, sequelize, redisClient } = require('../index');
 
@@ -95,5 +75,26 @@ describe('Stock Service API', () => {
     expect(statuses).toContain(200);
     expect(statuses).toEqual(expect.arrayContaining([200, expect.any(Number)]));
     expect([409, 422]).toContain(statuses.find(s => s !== 200));
+  });
+
+  it('should be idempotent for repeated identical deduction requests', async () => {
+    // Seed a new item for idempotency test
+    await request(app)
+      .post('/seed')
+      .send({ items: [{ id: 'idempotent-item', name: 'Idempotent Item', quantity: 4 }] });
+
+    // First deduction: should succeed
+    const res1 = await request(app)
+      .post('/stock/reduce')
+      .send({ itemId: 'idempotent-item', quantity: 2 });
+    expect(res1.statusCode).toEqual(200);
+    expect(res1.body.newQuantity).toEqual(2);
+
+    // Repeat the same deduction: should fail (insufficient stock if not idempotent, or 409/422)
+    const res2 = await request(app)
+      .post('/stock/reduce')
+      .send({ itemId: 'idempotent-item', quantity: 2 });
+    // Acceptable: either 200 with same result (if idempotent) or 422/409 (if not)
+    expect([200, 409, 422]).toContain(res2.statusCode);
   });
 });
