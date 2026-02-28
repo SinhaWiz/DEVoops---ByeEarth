@@ -36,6 +36,7 @@ jobs:
           RABBITMQ_URL: amqp://localhost:5672
           REDIS_URL: redis://localhost:6379
         run: |
+          docker compose stop notification-hub
           cd services/kitchen-queue
           npm install
           npm test
