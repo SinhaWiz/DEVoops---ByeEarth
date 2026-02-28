@@ -93,6 +93,7 @@ describe('Stock Service API', () => {
     // Only one should succeed, the other should fail (422 or 409)
     const statuses = [res1.statusCode, res2.statusCode];
     expect(statuses).toContain(200);
-    expect(statuses).toContain(422);
+    expect(statuses).toEqual(expect.arrayContaining([200, expect.any(Number)]));
+    expect([409, 422]).toContain(statuses.find(s => s !== 200));
   });
 });

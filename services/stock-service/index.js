@@ -5,6 +5,10 @@ const cors = require('cors');
 
 const { createClient } = require('redis');
 const client = require('prom-client');
+const app = express();
+const PORT = process.env.PORT || 3003;
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+
 // Prometheus Metrics Setup
 const collectDefaultMetrics = client.collectDefaultMetrics;
 collectDefaultMetrics();
@@ -29,10 +33,6 @@ app.get('/metrics', async (req, res) => {
     res.status(500).end(err.message);
   }
 });
-
-const app = express();
-const PORT = process.env.PORT || 3003;
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
 // Redis Client Connection
 const redisClient = createClient({ url: REDIS_URL });
