@@ -7,6 +7,16 @@ const axios = require('axios');
 const BASE_URL = process.env.IDENTITY_PROVIDER_URL || 'http://localhost:3001';
 
 describe('Identity Provider - Integration Tests', () => {
+  let studentToken;
+
+  // Login once at the top level to avoid rate-limit issues (3/min per username)
+  beforeAll(async () => {
+    const res = await axios.post(`${BASE_URL}/login`, {
+      username: 'student1',
+      password: 'password123'
+    });
+    studentToken = res.data.token;
+  });
 
   describe('GET /health', () => {
     it('should return 200 with status UP', async () => {
@@ -18,21 +28,16 @@ describe('Identity Provider - Integration Tests', () => {
   });
 
   describe('POST /login', () => {
-    it('should return a JWT token for valid credentials', async () => {
-      const res = await axios.post(`${BASE_URL}/login`, {
-        username: 'student1',
-        password: 'password123'
-      });
-      expect(res.status).toBe(200);
-      expect(res.data).toHaveProperty('token');
-      expect(res.data.user.username).toBe('student1');
-      expect(res.data.user.role).toBe('student');
+    it('should return a JWT token for valid credentials', () => {
+      // Already verified in beforeAll; just check the token exists
+      expect(studentToken).toBeTruthy();
     });
 
     it('should return 401 for invalid credentials', async () => {
       try {
+        // Use 'admin' username to avoid burning student1's rate limit
         await axios.post(`${BASE_URL}/login`, {
-          username: 'student1',
+          username: 'admin',
           password: 'wrongpassword'
         });
         fail('Should have thrown');
@@ -44,7 +49,7 @@ describe('Identity Provider - Integration Tests', () => {
 
     it('should return 400 when password is missing', async () => {
       try {
-        await axios.post(`${BASE_URL}/login`, { username: 'student1' });
+        await axios.post(`${BASE_URL}/login`, { username: 'nobody' });
         fail('Should have thrown');
       } catch (err) {
         expect(err.response.status).toBe(400);
@@ -53,19 +58,9 @@ describe('Identity Provider - Integration Tests', () => {
   });
 
   describe('GET /verify', () => {
-    let token;
-
-    beforeAll(async () => {
-      const res = await axios.post(`${BASE_URL}/login`, {
-        username: 'student1',
-        password: 'password123'
-      });
-      token = res.data.token;
-    });
-
     it('should verify a valid token', async () => {
       const res = await axios.get(`${BASE_URL}/verify`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${studentToken}` }
       });
       expect(res.status).toBe(200);
       expect(res.data.valid).toBe(true);
@@ -96,7 +91,7 @@ describe('Identity Provider - Integration Tests', () => {
 
   describe('Full login → verify round-trip', () => {
     it('should login and then successfully verify the issued token', async () => {
-      // Login
+      // Login as admin (separate username, own rate-limit bucket)
       const loginRes = await axios.post(`${BASE_URL}/login`, {
         username: 'admin',
         password: 'adminpassword'

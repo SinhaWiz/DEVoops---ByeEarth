@@ -35,14 +35,16 @@ jobs:
         run: |
           cd services/identity-provider
           npm install
-          npx jest tests/integration.test.js
+          npx jest tests/integration.test.js --testPathIgnorePatterns='[]'
+      - name: Reset identity-provider rate limiter
+        run: docker compose restart identity-provider && sleep 3
       - name: Run order-gateway integration tests
         env:
           REDIS_URL: redis://localhost:6379
         run: |
           cd services/order-gateway
           npm install
-          npx jest tests/integration.test.js
+          npx jest tests/integration.test.js --testPathIgnorePatterns='[]'
       - name: Run stock-service tests
         env:
           PGHOST: localhost
@@ -60,19 +62,19 @@ jobs:
           RABBITMQ_URL: amqp://localhost:5672
           REDIS_URL: redis://localhost:6379
         run: |
-          docker compose stop notification-hub
+          docker compose stop notification-hub kitchen-queue
           cd services/kitchen-queue
           npm install
           npm test
-      - name: Restart notification-hub for its tests
-        run: docker compose start notification-hub && sleep 5
+      - name: Restart services for notification-hub tests
+        run: docker compose start kitchen-queue notification-hub && sleep 5
       - name: Run notification-hub integration tests
         env:
           RABBITMQ_URL: amqp://localhost:5672
         run: |
           cd services/notification-hub
           npm install
-          npx jest tests/integration.test.js --forceExit
+          npx jest tests/integration.test.js --testPathIgnorePatterns='[]' --forceExit
       - name: Show docker compose logs on failure
         if: failure()
         run: docker compose logs

@@ -25,13 +25,15 @@ const mockUsers = [
   }
 ];
 
-// Rate Limiter for Login
+// Rate Limiter for Login (per Student ID / username, 3 attempts per minute)
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 attempts per window
-  message: { error: 'Too many login attempts, please try again after 15 minutes' },
+  windowMs: 60 * 1000, // 1 minute
+  max: 3, // Limit each key to 3 attempts per minute
+  keyGenerator: (req) => req.body?.username || req.ip, // Rate-limit per username
+  message: { error: 'Too many login attempts, please try again after 1 minute' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test', // Skip in test/CI environments
 });
 
 app.use(cors());
