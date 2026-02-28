@@ -2,11 +2,37 @@ require('dotenv').config();
 const express = require('express');
 const { Sequelize, DataTypes } = require('sequelize');
 const cors = require('cors');
-const { createClient } = require('redis');
 
+const { createClient } = require('redis');
+const client = require('prom-client');
 const app = express();
 const PORT = process.env.PORT || 3003;
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+
+// Prometheus Metrics Setup
+const collectDefaultMetrics = client.collectDefaultMetrics;
+collectDefaultMetrics();
+
+// Custom metrics example (can be extended as needed)
+const stockReduceCounter = new client.Counter({
+  name: 'stock_reduce_total',
+  help: 'Total number of stock reductions',
+});
+
+const stockReduceFailedCounter = new client.Counter({
+  name: 'stock_reduce_failed_total',
+  help: 'Total number of failed stock reductions',
+});
+
+// /metrics endpoint
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', client.register.contentType);
+    res.end(await client.register.metrics());
+  } catch (err) {
+    res.status(500).end(err.message);
+  }
+});
 
 // Redis Client Connection
 const redisClient = createClient({ url: REDIS_URL });
@@ -99,16 +125,19 @@ app.post('/stock/reduce', async (req, res) => {
   const { itemId, quantity } = req.body;
 
   if (!itemId || quantity === undefined) {
+    stockReduceFailedCounter.inc();
     return res.status(400).json({ error: 'itemId and quantity are required' });
   }
 
   try {
     const item = await StockItem.findByPk(itemId);
     if (!item) {
+      stockReduceFailedCounter.inc();
       return res.status(404).json({ error: 'Item not found' });
     }
 
     if (item.quantity < quantity) {
+      stockReduceFailedCounter.inc();
       return res.status(422).json({ error: 'Insufficient stock' });
     }
 
@@ -118,6 +147,7 @@ app.post('/stock/reduce', async (req, res) => {
     // Side effect: Update Redis Cache for Fast-Fail consistency
     await syncRedis(item.id, item.quantity);
 
+    stockReduceCounter.inc();
     res.status(200).json({ 
       message: 'Stock reduced successfully', 
       id: item.id, 
@@ -126,6 +156,7 @@ app.post('/stock/reduce', async (req, res) => {
     });
 
   } catch (err) {
+    stockReduceFailedCounter.inc();
     if (err.name === 'SequelizeOptimisticLockError') {
       res.status(409).json({ error: 'Conflict: Concurrent update detected. Please retry.' });
     } else {
