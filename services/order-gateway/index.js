@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const { createClient } = require('redis');
 const amqp = require('amqplib');
+const promClient = require('prom-client');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -11,8 +12,31 @@ const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_dev_key';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
 
+// Prometheus Metrics Setup
+promClient.collectDefaultMetrics();
+
+const ordersAcceptedCounter = new promClient.Counter({
+  name: 'orders_accepted_total',
+  help: 'Total number of orders accepted (enqueued)',
+});
+
+const ordersRejectedCounter = new promClient.Counter({
+  name: 'orders_rejected_total',
+  help: 'Total number of orders rejected (fast-fail)',
+});
+
+const httpRequestDuration = new promClient.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'status_code'],
+  buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5],
+});
+
 app.use(cors());
 app.use(express.json());
+
+// Chaos mode flag
+let chaosMode = false;
 
 // Redis Client Connection
 const redisClient = createClient({ url: REDIS_URL });
@@ -33,12 +57,37 @@ async function connectMQ() {
 
 // Root route
 app.get('/', (req, res) => {
-  res.status(200).json({ service: 'order-gateway', status: 'UP', endpoints: ['/health', '/order', '/seed-stock'] });
+  res.status(200).json({ service: 'order-gateway', status: chaosMode ? 'DEGRADED' : 'UP', endpoints: ['/health', '/order', '/seed-stock', '/metrics', '/chaos'] });
 });
 
 // Main health endpoint
 app.get('/health', (req, res) => {
+  if (chaosMode) {
+    return res.status(503).json({ status: 'DOWN', service: 'order-gateway', chaos: true });
+  }
   res.status(200).json({ status: 'UP', service: 'order-gateway' });
+});
+
+// Chaos endpoint
+app.get('/chaos', (req, res) => {
+  res.status(200).json({ service: 'order-gateway', chaosMode });
+});
+
+app.post('/chaos', (req, res) => {
+  const { enable } = req.body;
+  chaosMode = enable !== undefined ? !!enable : !chaosMode;
+  console.log(`[Chaos] order-gateway chaos mode: ${chaosMode}`);
+  res.status(200).json({ service: 'order-gateway', chaosMode });
+});
+
+// Metrics endpoint
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', promClient.register.contentType);
+    res.end(await promClient.register.metrics());
+  } catch (err) {
+    res.status(500).end(err.message);
+  }
 });
 
 // Authentication Middleware
@@ -58,8 +107,16 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
+// Chaos guard middleware
+const chaosGuard = (req, res, next) => {
+  if (chaosMode) {
+    return res.status(503).json({ error: 'Service in chaos mode', service: 'order-gateway' });
+  }
+  next();
+};
+
 // Implementation for Phase 2: Order with Fast-Fail (Redis check)
-app.post('/order', authMiddleware, async (req, res) => {
+app.post('/order', chaosGuard, authMiddleware, async (req, res) => {
   const { itemId, quantity = 1 } = req.body;
 
   if (!itemId) {
@@ -72,6 +129,7 @@ app.post('/order', authMiddleware, async (req, res) => {
     
     // If stock is null (not seeded) or 0, reject immediately
     if (stock === null || parseInt(stock) <= 0) {
+      ordersRejectedCounter.inc();
       return res.status(422).json({ 
         error: 'Order rejected: Item out of stock (fast-fail)',
         itemId,
@@ -94,6 +152,7 @@ app.post('/order', authMiddleware, async (req, res) => {
       console.warn('MQ channel not ready, order only logged locally');
     }
 
+    ordersAcceptedCounter.inc();
     // Fast acknowledgement (<2s guaranteed)
     res.status(202).json({
       message: 'Order received and being processed',

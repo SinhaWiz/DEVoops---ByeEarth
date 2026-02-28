@@ -4,6 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const amqp = require('amqplib');
 const cors = require('cors');
+const promClient = require('prom-client');
 
 const app = express();
 const server = http.createServer(app);
@@ -18,22 +19,64 @@ const PORT = process.env.PORT || 3005;
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
 const QUEUE_NAME = 'notifications_queue';
 
+// Prometheus Metrics Setup
+promClient.collectDefaultMetrics();
+
+const notificationsPushedCounter = new promClient.Counter({
+  name: 'notifications_pushed_total',
+  help: 'Total number of notifications pushed to clients',
+});
+
+const socketConnectionsGauge = new promClient.Gauge({
+  name: 'socket_connections_active',
+  help: 'Number of active WebSocket connections',
+});
+
 app.use(cors());
 app.use(express.json());
 
+// Chaos mode flag
+let chaosMode = false;
+
 // Root route
 app.get('/', (req, res) => {
-  res.status(200).json({ service: 'notification-hub', status: 'UP', endpoints: ['/health'] });
+  res.status(200).json({ service: 'notification-hub', status: chaosMode ? 'DEGRADED' : 'UP', endpoints: ['/health', '/metrics', '/chaos'] });
 });
 
 // Health endpoint
 app.get('/health', (req, res) => {
+  if (chaosMode) {
+    return res.status(503).json({ status: 'DOWN', service: 'notification-hub', chaos: true });
+  }
   res.status(200).json({ status: 'UP', service: 'notification-hub' });
+});
+
+// Chaos endpoint
+app.get('/chaos', (req, res) => {
+  res.status(200).json({ service: 'notification-hub', chaosMode });
+});
+
+app.post('/chaos', (req, res) => {
+  const { enable } = req.body;
+  chaosMode = enable !== undefined ? !!enable : !chaosMode;
+  console.log(`[Chaos] notification-hub chaos mode: ${chaosMode}`);
+  res.status(200).json({ service: 'notification-hub', chaosMode });
+});
+
+// Metrics endpoint
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', promClient.register.contentType);
+    res.end(await promClient.register.metrics());
+  } catch (err) {
+    res.status(500).end(err.message);
+  }
 });
 
 // Connection Handling
 io.on('connection', (socket) => {
   console.log(`[Socket] New client connected: ${socket.id}`);
+  socketConnectionsGauge.inc();
 
   socket.on('join_user', (userId) => {
     socket.join(`user_${userId}`);
@@ -42,6 +85,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log(`[Socket] Client disconnected: ${socket.id}`);
+    socketConnectionsGauge.dec();
   });
 });
 
@@ -70,6 +114,7 @@ async function startNotificationConsumer() {
           timestamp: new Date().toISOString()
         });
 
+        notificationsPushedCounter.inc();
         channel.ack(msg);
       }
     });

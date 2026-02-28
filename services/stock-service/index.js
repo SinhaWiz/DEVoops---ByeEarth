@@ -80,6 +80,9 @@ const StockItem = sequelize.define('StockItem', {
 app.use(cors());
 app.use(express.json());
 
+// Chaos mode flag
+let chaosMode = false;
+
 // Helper: Sync Redis Cache with DB for an item
 async function syncRedis(id, quantity) {
   try {
@@ -95,11 +98,14 @@ async function syncRedis(id, quantity) {
 
 // Root route
 app.get('/', (req, res) => {
-  res.status(200).json({ service: 'stock-service', status: 'UP', endpoints: ['/health', '/metrics', '/stock/:id', '/stock/reduce', '/seed'] });
+  res.status(200).json({ service: 'stock-service', status: chaosMode ? 'DEGRADED' : 'UP', endpoints: ['/health', '/metrics', '/stock/:id', '/stock/reduce', '/seed', '/chaos'] });
 });
 
 // Health Check
 app.get('/health', async (req, res) => {
+  if (chaosMode) {
+    return res.status(503).json({ status: 'DOWN', service: 'stock-service', chaos: true });
+  }
   try {
     await sequelize.authenticate();
     res.status(200).json({ 
@@ -113,8 +119,38 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Chaos endpoint
+app.get('/chaos', (req, res) => {
+  res.status(200).json({ service: 'stock-service', chaosMode });
+});
+
+app.post('/chaos', (req, res) => {
+  const { enable } = req.body;
+  chaosMode = enable !== undefined ? !!enable : !chaosMode;
+  console.log(`[Chaos] stock-service chaos mode: ${chaosMode}`);
+  res.status(200).json({ service: 'stock-service', chaosMode });
+});
+
+// Chaos guard middleware
+const chaosGuard = (req, res, next) => {
+  if (chaosMode) {
+    return res.status(503).json({ error: 'Service in chaos mode', service: 'stock-service' });
+  }
+  next();
+};
+
+// GET list of all stock items
+app.get('/stock', chaosGuard, async (req, res) => {
+  try {
+    const items = await StockItem.findAll();
+    res.status(200).json(items.map(i => ({ id: i.id, name: i.name, quantity: i.quantity })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET Stock for an item
-app.get('/stock/:id', async (req, res) => {
+app.get('/stock/:id', chaosGuard, async (req, res) => {
   try {
     const item = await StockItem.findByPk(req.params.id);
     if (!item) {
@@ -127,7 +163,7 @@ app.get('/stock/:id', async (req, res) => {
 });
 
 // POST Reduce Stock (Atomic & Optimistic)
-app.post('/stock/reduce', async (req, res) => {
+app.post('/stock/reduce', chaosGuard, async (req, res) => {
   const { itemId, quantity } = req.body;
 
   if (!itemId || quantity === undefined) {
@@ -196,6 +232,27 @@ async function init() {
     await redisClient.connect();
     await sequelize.sync({ alter: true }); 
     console.log('Postgres Database & Redis Cache synced');
+
+    // Auto-seed default menu items if table is empty
+    const count = await StockItem.count();
+    if (count === 0) {
+      const defaultItems = [
+        { id: 'spaghetti', name: 'Spaghetti Carbonara', quantity: 50 },
+        { id: 'ramen', name: 'Spicy Miso Ramen', quantity: 30 },
+        { id: 'pizza', name: 'Pepperoni Pizza', quantity: 20 },
+      ];
+      for (const item of defaultItems) {
+        await StockItem.upsert(item);
+        await syncRedis(item.id, item.quantity);
+      }
+      console.log('Default stock items seeded');
+    } else {
+      // Sync existing items to Redis on startup
+      const items = await StockItem.findAll();
+      for (const item of items) {
+        await syncRedis(item.id, item.quantity);
+      }
+    }
     
     app.listen(PORT, () => {
       console.log(`Stock Service running on port ${PORT}`);

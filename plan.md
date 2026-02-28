@@ -22,49 +22,49 @@ Here's the full assessment:
 
 | # | Requirement | What's Missing |
 |---|------------|----------------|
-| **4** | **Health Endpoints** on every service (200 OK / 503) | **notification-hub** and **kitchen-queue have NO `/health` endpoint**. Identity-provider and stock-service have them, order-gateway has a basic one. |
-| **4** | **Metrics Endpoints** on every service | Only **stock-service** has `/metrics` (Prometheus). The other 4 services have none. |
-| **5** | **Student Journey UI** — login → order → live status tracker (Pending → Stock Verified → In Kitchen → Ready) | Login and ordering work, but **`fetchStock()` is fake** (hardcoded values), and there is **no status progression tracker** (Pending → Verified → Kitchen → Ready). Notifications just appear as alerts. |
-| **5** | **Admin Dashboard** — health grid, live metrics, chaos toggle | Component exists at admin-dashboard.tsx but is **unreachable** — it's not a Next.js page route. Even if reachable, kitchen-queue/notification-hub have no `/health`, `/metrics`, or `/chaos` endpoints so all calls would fail. |
-| **3D** | Integration test coverage | Only stock-service and kitchen-queue are integration-tested. No integration tests for identity-provider, order-gateway, or notification-hub. |
+| **4** | **Health Endpoints** on every service (200 OK / 503) | **DONE** — All 5 services now have `/health` endpoints. |
+| **4** | **Metrics Endpoints** on every service | **DONE** — All 5 services now expose `/metrics` via `prom-client` (Prometheus format) with `collectDefaultMetrics()` plus service-specific custom counters. |
+| **5** | **Student Journey UI** — login → order → live status tracker (Pending → Stock Verified → In Kitchen → Ready) | **DONE** — `fetchStock()` fetches real data from stock-service via Next.js proxy. Order status tracker shows real-time progression (Pending → In Kitchen → Stock Verified → Ready) driven by Socket.io notifications from kitchen-queue. |
+| **5** | **Admin Dashboard** — health grid, live metrics, chaos toggle | **DONE** — Moved to `app/admin/page.tsx` (accessible at `/admin`), includes all 5 services, health grid, chaos enable/recover controls, and collapsible Prometheus metrics. |
+| **3D** | Integration test coverage | **DONE** — Integration tests now exist for all 5 services (identity-provider, order-gateway, notification-hub, stock-service, kitchen-queue). |
 
 ### What's NOT DONE (Missing Entirely)
 
 | # | Requirement | Status |
 |---|------------|--------|
-| **5 (Admin)** | **Chaos Toggle** — ability to "kill" a service and observe fault handling | **No `/chaos` endpoint** exists on any service. Dashboard has buttons but they 404. |
-| **5 (Student)** | **Live Status Tracker** — Pending → Stock Verified → In Kitchen → Ready progression | **Not implemented** — no status state machine or websocket updates for progression stages. |
+| **5 (Admin)** | **Chaos Toggle** — ability to "kill" a service and observe fault handling | **DONE** — All 5 services now have `GET /chaos` (status) and `POST /chaos` (toggle). Chaos mode returns 503 on `/health` and functional endpoints. Dashboard has Enable/Recover buttons. |
+| **5 (Student)** | **Live Status Tracker** — Pending → Stock Verified → In Kitchen → Ready progression | **DONE** — Kitchen-queue publishes intermediate status notifications (in_kitchen, stock_verified, ready/rejected). Frontend page.tsx has a live order tracker with animated progress bars. |
 | **Bonus** | Cloud deployment | Not done |
 | **Bonus** | Visual alerts if gateway avg response time > 1s over 30s | Not done — no latency tracking or alerting |
-| **Bonus** | Rate limiting on Identity Provider — 3 login attempts/min per Student ID | **Partially** — rate limiter exists but it's 5/15min per IP, not 3/min per Student ID |
+| **Bonus** | Rate limiting on Identity Provider — 3 login attempts/min per Student ID | **DONE** — Rate limiter updated to 3/min per username (Student ID) as specified. |
 
 ---
 
 ## Proposed Implementation Plan
 
-### Priority 1 — Critical Missing Requirements (Health/Metrics/Observability)
+### Priority 1 — Critical Missing Requirements (Health/Metrics/Observability) ✅ COMPLETED
 
-1. **Add `/health` and `/metrics` to notification-hub** — needs express routes alongside Socket.io
-2. **Add `/health` and `/metrics` to kitchen-queue** — needs a small Express HTTP server added
-3. **Add `/metrics` to identity-provider** — add `prom-client`
-4. **Add `/metrics` to order-gateway** — add `prom-client`
+1. ~~**Add `/health` and `/metrics` to notification-hub**~~ — ✅ Done. Express routes added with `prom-client`, custom counters: `notifications_pushed_total`, `socket_connections_active`
+2. ~~**Add `/health` and `/metrics` to kitchen-queue**~~ — ✅ Done. Express HTTP server with `prom-client`, custom counters: `orders_processed_total`, `orders_failed_total`, `orders_retried_total`
+3. ~~**Add `/metrics` to identity-provider**~~ — ✅ Done. `prom-client` with custom counters: `login_success_total`, `login_failed_total`, `token_verify_total`, `http_request_duration_seconds`
+4. ~~**Add `/metrics` to order-gateway**~~ — ✅ Done. `prom-client` with custom counters: `orders_accepted_total`, `orders_rejected_total`, `http_request_duration_seconds`
 
-### Priority 2 — Admin Dashboard & Chaos
+### Priority 2 — Admin Dashboard & Chaos ✅ COMPLETED
 
-5. **Make admin dashboard routable** — move to `app/admin/page.tsx` so it's accessible at `/admin`
-6. **Add `/chaos` endpoint to all services** — e.g. `POST /chaos` triggers `process.exit(1)` or sets a flag that makes the service return 503
-7. **Fix admin dashboard** to include identity-provider in service list
+5. ~~**Make admin dashboard routable**~~ — ✅ Done. Moved to `app/admin/page.tsx`, accessible at `/admin`. Old `admin-dashboard.tsx` deleted.
+6. ~~**Add `/chaos` endpoint to all services**~~ — ✅ Done. All 5 services have `GET /chaos` and `POST /chaos`. Chaos mode makes `/health` return 503 and blocks functional endpoints via `chaosGuard` middleware.
+7. ~~**Fix admin dashboard**~~ — ✅ Done. Now includes Identity Provider (all 5 services). Health grid shows colored status dots, chaos controls have Enable/Recover buttons, metrics use collapsible `<details>` for readability. Link to admin added from student page.
 
-### Priority 3 — Student UI Completeness
+### Priority 3 — Student UI Completeness ✅ COMPLETED
 
-8. **Fix `fetchStock()`** — query stock-service (via gateway or directly) for real stock quantities
-9. **Implement order status tracker** — add status state machine: Pending → Stock Verified → In Kitchen → Ready. Kitchen-queue should publish intermediate status updates to notification-hub.
-10. **Fix hardcoded localhost URLs** — use env vars or relative URLs with Next.js rewrites/proxy
+8. ~~**Fix `fetchStock()`**~~ — ✅ Done. Added `GET /stock` list endpoint to stock-service. Auto-seeds default menu items (spaghetti: 50, ramen: 30, pizza: 20) on first startup. Frontend fetches real stock via Next.js rewrite proxy. Menu shows live quantities and disables ordering for out-of-stock items.
+9. ~~**Implement order status tracker**~~ — ✅ Done. Kitchen-queue now publishes intermediate notifications: `in_kitchen` (when order picked up), `stock_verified` (after stock reduction), `ready`/`rejected` (final). Frontend has a live Order Tracker with animated progress bars showing Pending → In Kitchen → Stock Verified → Ready (or Rejected with red bar).
+10. ~~**Fix hardcoded localhost URLs**~~ — ✅ Done. Added Next.js rewrites in `next.config.ts` proxying `/api/{service-name}/*` to Docker-internal service URLs. Student page and admin dashboard both use relative URLs. Only Socket.io retains direct `localhost:3005` (WebSocket can't use HTTP proxy).
 
-### Priority 4 — Test & CI Gaps
+### Priority 4 — Test & CI Gaps ✅ COMPLETED
 
-11. **Add real tests for notification-hub** (replace placeholder)
-12. **Fix rate limiter** on identity-provider — 3 attempts/min per Student ID (not 5/15min per IP)
+11. ~~**Add real tests for notification-hub**~~ — ✅ Done. Integration tests created covering health, socket.io connection, room joining, and RabbitMQ→Socket.io delivery.
+12. ~~**Fix rate limiter**~~ — ✅ Done. Updated to 3 attempts/min per Student ID (username).
 
 ### Priority 5 — Bonus
 
