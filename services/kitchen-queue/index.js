@@ -116,5 +116,26 @@ async function startWorker() {
   }
 }
 
+// --- HTTP Server for health checks ---
+const express = require('express');
+const httpApp = express();
+const HTTP_PORT = process.env.PORT || 3004;
+
+httpApp.get('/', (req, res) => {
+  res.status(200).json({ service: 'kitchen-queue', status: 'UP', endpoints: ['/health'] });
+});
+
+httpApp.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'UP',
+    service: 'kitchen-queue',
+    redis: redisClient.isOpen ? 'connected' : 'disconnected'
+  });
+});
+
+httpApp.listen(HTTP_PORT, () => {
+  console.log(`Kitchen Queue HTTP server running on port ${HTTP_PORT}`);
+});
+
 // Start the worker
 startWorker();

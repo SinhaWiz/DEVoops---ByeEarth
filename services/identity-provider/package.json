@@ -15,8 +15,12 @@
     "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
+    "axios": "^1.6.2",
     "jest": "^29.7.0",
     "nodemon": "^3.0.2",
     "supertest": "^6.3.3"
+  },
+  "jest": {
+    "testPathIgnorePatterns": ["/node_modules/", "integration\\.test\\.js$"]
   }
 }

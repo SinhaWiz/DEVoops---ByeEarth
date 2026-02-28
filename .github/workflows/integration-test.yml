@@ -9,40 +9,72 @@ on:
 jobs:
   integration-test:
     runs-on: ubuntu-latest
-    services:
-      rabbitmq:
-        image: rabbitmq:3-management-alpine
-        ports:
-          - 5672:5672
-          - 15672:15672
-      postgres:
-        image: postgres:15-alpine
-        ports:
-          - 5432:5432
-        env:
-          POSTGRES_USER: dev
-          POSTGRES_PASSWORD: devpassword
-          POSTGRES_DB: cafeteria
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
     steps:
       - uses: actions/checkout@v3
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install Docker Compose
-        run: sudo apt-get update && sudo apt-get install -y docker-compose
       - name: Build and start all services
         run: docker compose up -d --build
       - name: Wait for services to be healthy
-        run: sleep 15
+        run: |
+          echo "Waiting for services to be ready..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/health > /dev/null 2>&1 && \
+               curl -sf http://localhost:3002/health > /dev/null 2>&1 && \
+               curl -sf http://localhost:3003/health > /dev/null 2>&1 && \
+               curl -sf http://localhost:3005/health > /dev/null 2>&1; then
+              echo "All services are healthy!"
+              break
+            fi
+            echo "Attempt $i/30 - waiting 5s..."
+            sleep 5
+          done
+      - name: Run identity-provider integration tests
+        run: |
+          cd services/identity-provider
+          npm install
+          npx jest tests/integration.test.js --testPathIgnorePatterns='[]'
+      - name: Reset identity-provider rate limiter
+        run: docker compose restart identity-provider && sleep 3
+      - name: Run order-gateway integration tests
+        env:
+          REDIS_URL: redis://localhost:6379
+        run: |
+          cd services/order-gateway
+          npm install
+          npx jest tests/integration.test.js --testPathIgnorePatterns='[]'
       - name: Run stock-service tests
-        run: npm test --prefix services/stock-service
+        env:
+          PGHOST: localhost
+          PGUSER: dev
+          PGPASSWORD: devpassword
+          PGDATABASE: cafeteria
+          PGPORT: "5432"
+          REDIS_URL: redis://localhost:6379
+        run: |
+          cd services/stock-service
+          npm install
+          npm test
       - name: Run kitchen-queue tests
-        run: npm test --prefix services/kitchen-queue
+        env:
+          RABBITMQ_URL: amqp://localhost:5672
+          REDIS_URL: redis://localhost:6379
+        run: |
+          docker compose stop notification-hub kitchen-queue
+          cd services/kitchen-queue
+          npm install
+          npm test
+      - name: Restart services for notification-hub tests
+        run: docker compose start kitchen-queue notification-hub && sleep 5
+      - name: Run notification-hub integration tests
+        env:
+          RABBITMQ_URL: amqp://localhost:5672
+        run: |
+          cd services/notification-hub
+          npm install
+          npx jest tests/integration.test.js --testPathIgnorePatterns='[]' --forceExit
       - name: Show docker compose logs on failure
         if: failure()
         run: docker compose logs
