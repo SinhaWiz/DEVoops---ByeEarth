@@ -93,10 +93,13 @@ describe('Kitchen Queue Async/Ack Behavior', () => {
     await channel.consume(NOTIFICATION_QUEUE, (msg) => {
       if (msg) {
         const notif = JSON.parse(msg.content.toString());
-        if (notif.orderId === orderId) {
+        if (notif.orderId === orderId && ['ORDER_SUCCESS', 'ORDER_FAILED'].includes(notif.type)) {
           clearTimeout(notificationTimeout);
           channel.ack(msg);
           resolveNotification({ notif, receivedAt: Date.now() });
+        } else if (notif.orderId === orderId) {
+          // Intermediate status notification (e.g. in_kitchen, stock_verified) — ack and skip
+          channel.ack(msg);
         } else {
           channel.nack(msg, false, true);
         }
