@@ -15,8 +15,12 @@ describe('Kitchen Queue Async/Ack Behavior', () => {
   });
 
   afterAll(async () => {
-    await channel.close();
-    await connection.close();
+    if (channel && typeof channel.close === 'function') {
+      await channel.close();
+    }
+    if (connection && typeof connection.close === 'function') {
+      await connection.close();
+    }
   });
 
   it('should ack order within 2s and process within 7s', async () => {
