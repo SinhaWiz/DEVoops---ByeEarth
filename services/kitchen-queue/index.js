@@ -64,6 +64,7 @@ async function startWorker() {
               console.log(`[Success] Stock reduced for Order: ${orderId}. New stock: ${response.data.newQuantity}`);
               // Mark as processed (idempotency)
               await redisClient.set(idempotencyKey, '1', { EX: 24 * 60 * 60 }); // 1 day expiry
+              ordersProcessedCounter.inc();
               // Notify User of Success
               const successNotification = {
                 userId,
@@ -84,6 +85,7 @@ async function startWorker() {
                 console.error(`[Critical] Order ${orderId} failed fulfillment: ${errorMsg}`);
                 // Mark as processed (idempotency)
                 await redisClient.set(idempotencyKey, '1', { EX: 24 * 60 * 60 });
+                ordersFailedCounter.inc();
                 // Notify User of Failure
                 const failureNotification = {
                   userId,
@@ -96,13 +98,16 @@ async function startWorker() {
               } else if (status === 409) {
                 // Conflict (Optimistic Lock) - retry (requeue by sending to ORDER_QUEUE again)
                 console.log(`[Retry] Conflict detected for ${orderId}. Re-queuing...`);
+                ordersRetriedCounter.inc();
                 channel.sendToQueue(ORDER_QUEUE, Buffer.from(JSON.stringify(orderData)), { persistent: true });
               } else {
                 // Server error - retry (requeue by sending to ORDER_QUEUE again)
+                ordersRetriedCounter.inc();
                 channel.sendToQueue(ORDER_QUEUE, Buffer.from(JSON.stringify(orderData)), { persistent: true });
               }
             } else {
               console.error(`[Network Error] Could not reach Stock Service: ${err.message}`);
+              ordersRetriedCounter.inc();
               channel.sendToQueue(ORDER_QUEUE, Buffer.from(JSON.stringify(orderData)), { persistent: true });
             }
           }
@@ -116,13 +121,32 @@ async function startWorker() {
   }
 }
 
-// --- HTTP Server for health checks ---
+// --- HTTP Server for health checks & metrics ---
 const express = require('express');
+const promClient = require('prom-client');
 const httpApp = express();
 const HTTP_PORT = process.env.PORT || 3004;
 
+// Prometheus Metrics Setup
+promClient.collectDefaultMetrics();
+
+const ordersProcessedCounter = new promClient.Counter({
+  name: 'orders_processed_total',
+  help: 'Total number of orders successfully processed',
+});
+
+const ordersFailedCounter = new promClient.Counter({
+  name: 'orders_failed_total',
+  help: 'Total number of orders that failed processing',
+});
+
+const ordersRetriedCounter = new promClient.Counter({
+  name: 'orders_retried_total',
+  help: 'Total number of orders re-queued for retry',
+});
+
 httpApp.get('/', (req, res) => {
-  res.status(200).json({ service: 'kitchen-queue', status: 'UP', endpoints: ['/health'] });
+  res.status(200).json({ service: 'kitchen-queue', status: 'UP', endpoints: ['/health', '/metrics'] });
 });
 
 httpApp.get('/health', (req, res) => {
@@ -131,6 +155,15 @@ httpApp.get('/health', (req, res) => {
     service: 'kitchen-queue',
     redis: redisClient.isOpen ? 'connected' : 'disconnected'
   });
+});
+
+httpApp.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', promClient.register.contentType);
+    res.end(await promClient.register.metrics());
+  } catch (err) {
+    res.status(500).end(err.message);
+  }
 });
 
 httpApp.listen(HTTP_PORT, () => {
