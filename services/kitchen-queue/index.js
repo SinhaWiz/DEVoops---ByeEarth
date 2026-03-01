@@ -20,9 +20,22 @@ let amqpChannel = null;
 
 async function startWorker() {
   try {
-    await redisClient.connect();
-    const connection = await amqp.connect(RABBITMQ_URL);
-    const channel = await connection.createChannel();
+    // Cleanup previous connections before retrying
+    if (amqpChannel) {
+      try { await amqpChannel.close(); } catch (_) {}
+      amqpChannel = null;
+    }
+    if (amqpConnection) {
+      try { await amqpConnection.close(); } catch (_) {}
+      amqpConnection = null;
+    }
+
+    if (!redisClient.isOpen) {
+      await redisClient.connect();
+    }
+    amqpConnection = await amqp.connect(RABBITMQ_URL);
+    const channel = await amqpConnection.createChannel();
+    amqpChannel = channel;
 
     await channel.assertQueue(ORDER_QUEUE, { durable: true });
     await channel.assertQueue(NOTIFICATION_QUEUE, { durable: true });
@@ -166,8 +179,7 @@ httpApp.get('/chaos', (req, res) => {
 httpApp.post('/chaos', (req, res) => {
   const { enable } = req.body;
   chaosMode = enable !== undefined ? !!enable : !chaosMode;
-    console.log(`[Chaos] kitchen-queue chaos mode: ${chaosMode}`);
-    console.log(`[Chaos] kitchen-queue chaos mode: ${chaosMode}`);
+  console.log(`[Chaos] kitchen-queue chaos mode: ${chaosMode}`);
   res.status(200).json({ service: 'kitchen-queue', chaosMode });
 });
 
@@ -181,9 +193,7 @@ httpApp.get('/metrics', async (req, res) => {
 });
 
 httpApp.listen(HTTP_PORT, () => {
-  httpApp.listen(HTTP_PORT, () => {
-    console.log(`Kitchen Queue HTTP server running on port ${HTTP_PORT}`);
-  });
+  console.log(`Kitchen Queue HTTP server running on port ${HTTP_PORT}`);
 });
 
 // Start the worker
