@@ -68,6 +68,11 @@ jobs:
         fi
       working-directory: services/${{ matrix.service }}
 
+    - name: Run linter
+      if: matrix.service == 'frontend'
+      run: npm run lint
+      working-directory: services/${{ matrix.service }}
+
     - name: Run tests (placeholder)
       run: |
         if grep -q '"test":' package.json; then
