@@ -34,8 +34,11 @@ const STATUS_LABELS: Record<string, string> = {
   rejected: 'Rejected',
 };
 
-// Socket.io connects directly from browser to notification-hub (WebSocket can't use Next.js rewrites)
-const NOTIFICATION_URL = 'http://localhost:3005';
+// Socket.io connects directly from the browser to notification-hub.
+// In docker-compose this is localhost:3005.
+// On Render set NEXT_PUBLIC_NOTIFICATION_HUB_URL to the deployed service URL.
+const NOTIFICATION_URL =
+  process.env.NEXT_PUBLIC_NOTIFICATION_HUB_URL || 'http://localhost:3005';
 
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);

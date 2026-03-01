@@ -4,27 +4,31 @@ import { useState, useEffect, useCallback } from "react";
 import toast, { Toaster } from "react-hot-toast";
 import Link from "next/link";
 
+const SERVICES = [
+  { name: "Identity Provider", url: "/api/identity-provider" },
+  { name: "Order Gateway", url: "/api/order-gateway" },
+  { name: "Stock Service", url: "/api/stock-service" },
+  { name: "Kitchen Queue", url: "/api/kitchen-queue" },
+  { name: "Notification Hub", url: "/api/notification-hub" },
+];
+
+type ServiceHealth = { status?: string; httpStatus: number; [key: string]: unknown };
+type LatencyStats = { avg30s: number; count30s: number; breached: boolean; thresholdS: number; windowMs: number };
+
 export default function AdminDashboard() {
-  const [health, setHealth] = useState<Record<string, any>>({});
+  const [health, setHealth] = useState<Record<string, ServiceHealth>>({});
   const [metrics, setMetrics] = useState<Record<string, string>>({});
   const [chaosStatus, setChaosStatus] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
-
-  const SERVICES = [
-    { name: "Identity Provider", url: "/api/identity-provider" },
-    { name: "Order Gateway", url: "/api/order-gateway" },
-    { name: "Stock Service", url: "/api/stock-service" },
-    { name: "Kitchen Queue", url: "/api/kitchen-queue" },
-    { name: "Notification Hub", url: "/api/notification-hub" },
-  ];
+  const [latencyStats, setLatencyStats] = useState<LatencyStats | null>(null);
 
   const fetchAllHealth = useCallback(async () => {
-    const results: Record<string, any> = {};
+    const results: Record<string, ServiceHealth> = {};
     await Promise.all(
       SERVICES.map(async (svc) => {
         try {
           const res = await fetch(`${svc.url}/health`, { cache: "no-store" });
-          const data = await res.json();
+          const data = await res.json() as Record<string, unknown>;
           results[svc.name] = { ...data, httpStatus: res.status };
         } catch {
           results[svc.name] = { status: "DOWN", httpStatus: 0 };
@@ -65,17 +69,33 @@ export default function AdminDashboard() {
     setChaosStatus(results);
   }, []);
 
+  const fetchLatencyStats = useCallback(async () => {
+    try {
+      const res = await fetch('/api/order-gateway/latency-stats', { cache: 'no-store' });
+      const data = await res.json() as LatencyStats;
+      setLatencyStats(data);
+    } catch {
+      setLatencyStats(null);
+    }
+  }, []);
+
   useEffect(() => {
     fetchAllHealth();
     fetchAllMetrics();
     fetchAllChaosStatus();
+    fetchLatencyStats();
     const interval = setInterval(() => {
       fetchAllHealth();
       fetchAllMetrics();
       fetchAllChaosStatus();
     }, 15000);
-    return () => clearInterval(interval);
-  }, [fetchAllHealth, fetchAllMetrics, fetchAllChaosStatus]);
+    // Poll latency every 5s for a near-real-time alert
+    const latencyInterval = setInterval(fetchLatencyStats, 5000);
+    return () => {
+      clearInterval(interval);
+      clearInterval(latencyInterval);
+    };
+  }, [fetchAllHealth, fetchAllMetrics, fetchAllChaosStatus, fetchLatencyStats]);
 
   const triggerChaos = async (svc: { name: string; url: string }, enable: boolean) => {
     setLoading(true);
@@ -101,19 +121,19 @@ export default function AdminDashboard() {
     }
   };
 
-  const getStatusColor = (svc: string) => {
-    const h = health[svc];
+  const getStatusColor = (svcName: string) => {
+    const h = health[svcName];
     if (!h) return "bg-gray-400";
     if (h.httpStatus === 200 && h.status === "UP") return "bg-green-500";
     if (h.httpStatus === 503) return "bg-yellow-500";
     return "bg-red-500";
   };
 
-  const getStatusText = (svc: string) => {
-    const h = health[svc];
+  const getStatusText = (svcName: string) => {
+    const h = health[svcName];
     if (!h) return "Unknown";
     if (h.httpStatus === 503) return "DEGRADED (503)";
-    return h.status || "Unknown";
+    return h.status ?? "Unknown";
   };
 
   return (
@@ -133,6 +153,42 @@ export default function AdminDashboard() {
       </header>
 
       <main className="max-w-5xl mx-auto space-y-6">
+        {/* Gateway Latency Alert */}
+        <section className={`p-4 rounded-xl border-2 flex items-center justify-between gap-4 transition-colors ${
+          latencyStats === null
+            ? 'bg-gray-100 border-gray-300 dark:bg-zinc-800 dark:border-zinc-600'
+            : latencyStats.breached
+            ? 'bg-red-50 border-red-500 dark:bg-red-950 dark:border-red-500 animate-pulse'
+            : 'bg-green-50 border-green-400 dark:bg-green-950 dark:border-green-600'
+        }`}>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{latencyStats === null ? '⏳' : latencyStats.breached ? '🚨' : '✅'}</span>
+            <div>
+              <p className={`font-bold text-sm ${
+                latencyStats?.breached ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300'
+              }`}>
+                {latencyStats === null
+                  ? 'Gateway latency — connecting…'
+                  : latencyStats.breached
+                  ? `ALERT — Gateway avg response time ${latencyStats.avg30s}s over last 30s (threshold: ${latencyStats.thresholdS}s)`
+                  : `Gateway latency OK — avg ${latencyStats.avg30s}s over last 30s`}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {latencyStats !== null && `${latencyStats.count30s} request${latencyStats.count30s !== 1 ? 's' : ''} sampled · refreshes every 5s`}
+              </p>
+            </div>
+          </div>
+          {latencyStats !== null && (
+            <div className="text-right shrink-0">
+              <span className={`text-3xl font-mono font-bold ${
+                latencyStats.breached ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+              }`}>
+                {latencyStats.avg30s}s
+              </span>
+            </div>
+          )}
+        </section>
+
         {/* Service Health Grid */}
         <section className="bg-white dark:bg-zinc-900 p-6 rounded-xl shadow-sm">
           <h2 className="text-xl font-semibold mb-4 dark:text-white">Service Health Grid</h2>

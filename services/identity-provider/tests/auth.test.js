@@ -83,4 +83,57 @@ describe('Identity Provider - Auth Flow', () => {
     });
   });
 
+  describe('Rate Limiter — 3 attempts per minute per Student ID', () => {
+    // The rate limiter skips when NODE_ENV === 'test'.
+    // We temporarily set it to 'development' so skip() returns false.
+    // The skip function is evaluated per-request, so no module reload is needed.
+    let savedNodeEnv;
+
+    beforeAll(() => {
+      savedNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+    });
+
+    afterAll(() => {
+      process.env.NODE_ENV = savedNodeEnv;
+    });
+
+    it('should allow the first 3 attempts then block the 4th with 429', async () => {
+      // Use a username not touched by any other test block, so the limiter
+      // store is guaranteed clean for this key.
+      const username = 'ratelimit-testuser';
+
+      // Attempts 1–3: any non-429 response is acceptable
+      // (401 because the user doesn't exist — but it still counts towards the limit)
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const res = await request(app)
+          .post('/login')
+          .send({ username, password: 'wrong-password' });
+        expect(res.status).not.toBe(429);
+      }
+
+      // Attempt 4: must be rate-limited
+      const res = await request(app)
+        .post('/login')
+        .send({ username, password: 'wrong-password' });
+      expect(res.status).toBe(429);
+      expect(res.body.error).toMatch(/too many login attempts/i);
+    });
+
+    it('should rate-limit per username, not globally (different users are independent)', async () => {
+      // Exhaust the limit for userA
+      for (let i = 0; i < 3; i++) {
+        await request(app)
+          .post('/login')
+          .send({ username: 'ratelimit-userA', password: 'x' });
+      }
+
+      // userB should still be able to attempt a login (not blocked by userA's limit)
+      const res = await request(app)
+        .post('/login')
+        .send({ username: 'ratelimit-userB', password: 'x' });
+      expect(res.status).not.toBe(429);
+    });
+  });
+
 });
