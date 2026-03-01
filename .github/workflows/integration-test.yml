@@ -75,7 +75,7 @@ jobs:
           REDIS_URL: redis://localhost:6379
         run: |
           cd services/kitchen-queue
-          npx jest tests/placeholder.test.js --testPathIgnorePatterns='[]' --forceExit
+          npx jest tests/placeholder.integration.test.js --testPathIgnorePatterns='[]' --forceExit
       - name: Restart services for notification-hub tests
         run: docker compose start kitchen-queue notification-hub && sleep 5
       - name: Run notification-hub integration tests
