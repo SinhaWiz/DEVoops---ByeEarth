@@ -20,15 +20,16 @@ jobs:
       - name: Wait for services to be healthy
         run: |
           echo "Waiting for services to be ready..."
-          for i in $(seq 1 30); do
+          for i in $(seq 1 40); do
             if curl -sf http://localhost:3001/health > /dev/null 2>&1 && \
                curl -sf http://localhost:3002/health > /dev/null 2>&1 && \
                curl -sf http://localhost:3003/health > /dev/null 2>&1 && \
+               curl -sf http://localhost:3004/health > /dev/null 2>&1 && \
                curl -sf http://localhost:3005/health > /dev/null 2>&1; then
-              echo "All services are healthy!"
+              echo "All 5 services are healthy!"
               break
             fi
-            echo "Attempt $i/30 - waiting 5s..."
+            echo "Attempt $i/40 - waiting 5s..."
             sleep 5
           done
       - name: Run identity-provider integration tests
@@ -57,15 +58,24 @@ jobs:
           cd services/stock-service
           npm install
           npm test
-      - name: Run kitchen-queue tests
+      - name: Run kitchen-queue integration tests (service must be running)
+        env:
+          RABBITMQ_URL: amqp://localhost:5672
+          REDIS_URL: redis://localhost:6379
+          KITCHEN_QUEUE_URL: http://localhost:3004
+        run: |
+          cd services/kitchen-queue
+          npm install
+          npx jest tests/integration.test.js --testPathIgnorePatterns='[]' --forceExit
+      - name: Stop services for kitchen-queue unit tests (spawns own worker)
+        run: docker compose stop notification-hub kitchen-queue && sleep 2
+      - name: Run kitchen-queue unit tests (placeholder — spawns isolated worker)
         env:
           RABBITMQ_URL: amqp://localhost:5672
           REDIS_URL: redis://localhost:6379
         run: |
-          docker compose stop notification-hub kitchen-queue
           cd services/kitchen-queue
-          npm install
-          npm test
+          npx jest tests/placeholder.test.js --testPathIgnorePatterns='[]' --forceExit
       - name: Restart services for notification-hub tests
         run: docker compose start kitchen-queue notification-hub && sleep 5
       - name: Run notification-hub integration tests

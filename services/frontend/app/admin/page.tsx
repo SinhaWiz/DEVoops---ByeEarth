@@ -4,28 +4,31 @@ import { useState, useEffect, useCallback } from "react";
 import toast, { Toaster } from "react-hot-toast";
 import Link from "next/link";
 
+const SERVICES = [
+  { name: "Identity Provider", url: "/api/identity-provider" },
+  { name: "Order Gateway", url: "/api/order-gateway" },
+  { name: "Stock Service", url: "/api/stock-service" },
+  { name: "Kitchen Queue", url: "/api/kitchen-queue" },
+  { name: "Notification Hub", url: "/api/notification-hub" },
+];
+
+type ServiceHealth = { status?: string; httpStatus: number; [key: string]: unknown };
+type LatencyStats = { avg30s: number; count30s: number; breached: boolean; thresholdS: number; windowMs: number };
+
 export default function AdminDashboard() {
-  const [health, setHealth] = useState<Record<string, any>>({});
+  const [health, setHealth] = useState<Record<string, ServiceHealth>>({});
   const [metrics, setMetrics] = useState<Record<string, string>>({});
   const [chaosStatus, setChaosStatus] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
-  const [latencyStats, setLatencyStats] = useState<{ avg30s: number; count30s: number; breached: boolean } | null>(null);
-
-  const SERVICES = [
-    { name: "Identity Provider", url: "/api/identity-provider" },
-    { name: "Order Gateway", url: "/api/order-gateway" },
-    { name: "Stock Service", url: "/api/stock-service" },
-    { name: "Kitchen Queue", url: "/api/kitchen-queue" },
-    { name: "Notification Hub", url: "/api/notification-hub" },
-  ];
+  const [latencyStats, setLatencyStats] = useState<LatencyStats | null>(null);
 
   const fetchAllHealth = useCallback(async () => {
-    const results: Record<string, any> = {};
+    const results: Record<string, ServiceHealth> = {};
     await Promise.all(
       SERVICES.map(async (svc) => {
         try {
           const res = await fetch(`${svc.url}/health`, { cache: "no-store" });
-          const data = await res.json();
+          const data = await res.json() as Record<string, unknown>;
           results[svc.name] = { ...data, httpStatus: res.status };
         } catch {
           results[svc.name] = { status: "DOWN", httpStatus: 0 };
@@ -69,7 +72,7 @@ export default function AdminDashboard() {
   const fetchLatencyStats = useCallback(async () => {
     try {
       const res = await fetch('/api/order-gateway/latency-stats', { cache: 'no-store' });
-      const data = await res.json();
+      const data = await res.json() as LatencyStats;
       setLatencyStats(data);
     } catch {
       setLatencyStats(null);
@@ -118,19 +121,19 @@ export default function AdminDashboard() {
     }
   };
 
-  const getStatusColor = (svc: string) => {
-    const h = health[svc];
+  const getStatusColor = (svcName: string) => {
+    const h = health[svcName];
     if (!h) return "bg-gray-400";
     if (h.httpStatus === 200 && h.status === "UP") return "bg-green-500";
     if (h.httpStatus === 503) return "bg-yellow-500";
     return "bg-red-500";
   };
 
-  const getStatusText = (svc: string) => {
-    const h = health[svc];
+  const getStatusText = (svcName: string) => {
+    const h = health[svcName];
     if (!h) return "Unknown";
     if (h.httpStatus === 503) return "DEGRADED (503)";
-    return h.status || "Unknown";
+    return h.status ?? "Unknown";
   };
 
   return (
