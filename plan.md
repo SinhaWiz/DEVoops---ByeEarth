@@ -35,7 +35,7 @@ Here's the full assessment:
 | **5 (Admin)** | **Chaos Toggle** — ability to "kill" a service and observe fault handling | **DONE** — All 5 services now have `GET /chaos` (status) and `POST /chaos` (toggle). Chaos mode returns 503 on `/health` and functional endpoints. Dashboard has Enable/Recover buttons. |
 | **5 (Student)** | **Live Status Tracker** — Pending → Stock Verified → In Kitchen → Ready progression | **DONE** — Kitchen-queue publishes intermediate status notifications (in_kitchen, stock_verified, ready/rejected). Frontend page.tsx has a live order tracker with animated progress bars. |
 | **Bonus** | Cloud deployment | Not done |
-| **Bonus** | Visual alerts if gateway avg response time > 1s over 30s | Not done — no latency tracking or alerting |
+| **Bonus** | Visual alerts if gateway avg response time > 1s over 30s | **DONE** — `httpRequestDuration` histogram wired via timing middleware; 30s rolling ring buffer maintained in memory; `GET /latency-stats` exposes `{ avg30s, count30s, breached }`; Admin dashboard polls every 5s and shows a green OK / red animated alert banner with the live avg. |
 | **Bonus** | Rate limiting on Identity Provider — 3 login attempts/min per Student ID | **DONE** — Rate limiter updated to 3/min per username (Student ID) as specified. |
 
 ---
