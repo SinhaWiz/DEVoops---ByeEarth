@@ -121,4 +121,107 @@ describe('Kitchen Queue Async/Ack Behavior', () => {
     expect(processTime).toBeLessThanOrEqual(15000); // <=15s (allow for CI slop)
     expect(['ORDER_SUCCESS', 'ORDER_FAILED']).toContain(notif.type);
   }, 30000); // 30s Jest timeout
+
+  it('should retry on transient stock-service failure and eventually succeed', async () => {
+    const orderId = uuidv4();
+    let callCount = 0;
+
+    // Override the mock stock server to fail the first attempt then succeed
+    mockStockServer.removeAllListeners('request');
+    mockStockServer.on('request', (req, res) => {
+      if (req.method === 'POST' && req.url === '/stock/reduce') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', () => {
+          callCount++;
+          if (callCount === 1) {
+            // First call: simulate a transient 500 error
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Internal Server Error' }));
+          } else {
+            // Subsequent calls: succeed
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ newQuantity: 9 }));
+          }
+        });
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+
+    await channel.purgeQueue(NOTIFICATION_QUEUE);
+
+    const finalNotifPromise = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('No final notification within 40s')), 40000);
+      channel.consume(NOTIFICATION_QUEUE, (msg) => {
+        if (!msg) return;
+        const notif = JSON.parse(msg.content.toString());
+        channel.ack(msg);
+        if (notif.orderId === orderId && ['ORDER_SUCCESS', 'ORDER_FAILED'].includes(notif.type)) {
+          clearTimeout(timeout);
+          resolve(notif);
+        }
+      }, { noAck: false });
+    });
+
+    channel.sendToQueue(
+      ORDER_QUEUE,
+      Buffer.from(JSON.stringify({ orderId, itemId: 'test-item', quantity: 1, userId: 'test-user' })),
+      { persistent: true }
+    );
+
+    const notif = await finalNotifPromise;
+    // Worker retried after the 500 — final result must be ORDER_SUCCESS
+    expect(notif.type).toBe('ORDER_SUCCESS');
+    expect(callCount).toBeGreaterThanOrEqual(2); // At least one retry happened
+  }, 60000);
+
+  it('should send ORDER_FAILED and not retry on permanent 422 (out of stock)', async () => {
+    const orderId = uuidv4();
+    let callCount = 0;
+
+    mockStockServer.removeAllListeners('request');
+    mockStockServer.on('request', (req, res) => {
+      if (req.method === 'POST' && req.url === '/stock/reduce') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', () => {
+          callCount++;
+          res.writeHead(422, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Insufficient stock' }));
+        });
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+
+    await channel.purgeQueue(NOTIFICATION_QUEUE);
+
+    const finalNotifPromise = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('No ORDER_FAILED notification within 20s')), 20000);
+      channel.consume(NOTIFICATION_QUEUE, (msg) => {
+        if (!msg) return;
+        const notif = JSON.parse(msg.content.toString());
+        channel.ack(msg);
+        if (notif.orderId === orderId && notif.type === 'ORDER_FAILED') {
+          clearTimeout(timeout);
+          resolve(notif);
+        }
+      }, { noAck: false });
+    });
+
+    channel.sendToQueue(
+      ORDER_QUEUE,
+      Buffer.from(JSON.stringify({ orderId, itemId: 'test-item', quantity: 1, userId: 'test-user' })),
+      { persistent: true }
+    );
+
+    const notif = await finalNotifPromise;
+    expect(notif.type).toBe('ORDER_FAILED');
+    expect(notif.status).toBe('rejected');
+    // Must NOT have retried — 422 is permanent
+    expect(callCount).toBe(1);
+  }, 30000);
 });
