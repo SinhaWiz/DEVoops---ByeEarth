@@ -26,7 +26,7 @@ Here's the full assessment:
 | **4** | **Metrics Endpoints** on every service | **DONE** — All 5 services now expose `/metrics` via `prom-client` (Prometheus format) with `collectDefaultMetrics()` plus service-specific custom counters. |
 | **5** | **Student Journey UI** — login → order → live status tracker (Pending → Stock Verified → In Kitchen → Ready) | **DONE** — `fetchStock()` fetches real data from stock-service via Next.js proxy. Order status tracker shows real-time progression (Pending → In Kitchen → Stock Verified → Ready) driven by Socket.io notifications from kitchen-queue. |
 | **5** | **Admin Dashboard** — health grid, live metrics, chaos toggle | **DONE** — Moved to `app/admin/page.tsx` (accessible at `/admin`), includes all 5 services, health grid, chaos enable/recover controls, and collapsible Prometheus metrics. |
-| **3D** | Integration test coverage | **DONE** — Integration tests now exist for all 5 services (identity-provider, order-gateway, notification-hub, stock-service, kitchen-queue). |
+| **3D** | Integration test coverage | **DONE** — Integration tests now exist for all 5 services (identity-provider, order-gateway, notification-hub, stock-service, kitchen-queue). `integration.test.js` added to stock-service and kitchen-queue covering health, metrics, chaos toggle, and e2e order/stock flows. |
 
 ### What's NOT DONE (Missing Entirely)
 
