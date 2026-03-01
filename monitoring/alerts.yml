@@ -1,0 +1,51 @@
+groups:
+  - name: cafeteria.rules
+    rules:
+      # Fires when the 30-second rolling average request duration on the
+      # order-gateway exceeds 1 second for a sustained 30 seconds.
+      - alert: GatewayHighLatency
+        expr: >
+          (
+            rate(http_request_duration_seconds_sum{job="order-gateway"}[30s])
+            /
+            rate(http_request_duration_seconds_count{job="order-gateway"}[30s])
+          ) > 1.0
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Order Gateway latency too high"
+          description: >
+            The 30-second rolling average response time on the order-gateway is
+            {{ $value | humanizeDuration }}, which exceeds the 1 s threshold.
+            This has persisted for at least 30 seconds.
+
+      # Fires when a service's /health endpoint stops being scraped
+      # (container down or unreachable for 1 minute).
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: >
+            Prometheus cannot scrape {{ $labels.job }} (instance {{ $labels.instance }}).
+            The service has been unreachable for at least 1 minute.
+
+      # Fires when the order failure rate exceeds 10 % of accepted orders
+      # over the last 5 minutes — indicates a systemic stock or upstream problem.
+      - alert: HighOrderFailureRate
+        expr: >
+          rate(orders_failed_total[5m])
+          /
+          (rate(orders_accepted_total[5m]) + 1)
+          > 0.10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High order failure rate detected"
+          description: >
+            {{ $value | humanizePercentage }} of orders are failing over the last
+            5 minutes.  Check kitchen-queue logs and stock-service health.

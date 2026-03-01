@@ -37,6 +37,8 @@ Here's the full assessment:
 | **Bonus** | Cloud deployment | Not done |
 | **Bonus** | Visual alerts if gateway avg response time > 1s over 30s | **DONE** — `httpRequestDuration` histogram wired via timing middleware; 30s rolling ring buffer maintained in memory; `GET /latency-stats` exposes `{ avg30s, count30s, breached }`; Admin dashboard polls every 5s and shows a green OK / red animated alert banner with the live avg. |
 | **Bonus** | Rate limiting on Identity Provider — 3 login attempts/min per Student ID | **DONE** — Rate limiter updated to 3/min per username (Student ID) as specified. |
+| **Phase 7** | Docker container readiness probes | **DONE** — All 10 containers in docker-compose.yml have `healthcheck:` blocks. App services use `wget -qO- http://localhost:{PORT}/health`. Infra uses `pg_isready`, `redis-cli ping`, `rabbitmq-diagnostics ping`. All `depends_on:` entries upgraded to `condition: service_healthy`. |
+| **Phase 7** | External Slack/email alerts for latency breaches | **DONE** — Alertmanager service added (port 9093). Three alert rules in `monitoring/alerts.yml`: `GatewayHighLatency` (30s avg > 1s), `ServiceDown` (up==0), `HighOrderFailureRate` (>10%). `monitoring/alertmanager.yml` configures Slack + email receivers, inhibit rules, and grouping. `monitoring/prometheus.yml` now has `alerting:` + `rule_files:` blocks. Credentials via env vars: `SLACK_WEBHOOK_URL`, `SMTP_*`. |
 
 ---
 
