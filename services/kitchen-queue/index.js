@@ -6,7 +6,7 @@ const { createClient } = require('redis');
 
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
-const STOCK_SERVICE_URL = process.env.STOCK_SERVICE_URL || 'http://stock-service:3003';
+const STOCK_SERVICE_URL = process.env.STOCK_SERVICE_URL || 'http://localhost:3003';
 const ORDER_QUEUE = 'orders_queue';
 const NOTIFICATION_QUEUE = 'notifications_queue';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
