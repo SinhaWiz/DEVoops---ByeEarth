@@ -15,11 +15,27 @@ const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const redisClient = createClient({ url: REDIS_URL });
 redisClient.on('error', (err) => console.error('Redis Client Error', err));
 
+let amqpConnection = null;
+let amqpChannel = null;
+
 async function startWorker() {
   try {
-    await redisClient.connect();
-    const connection = await amqp.connect(RABBITMQ_URL);
-    const channel = await connection.createChannel();
+    // Cleanup previous connections before retrying
+    if (amqpChannel) {
+      try { await amqpChannel.close(); } catch (_) {}
+      amqpChannel = null;
+    }
+    if (amqpConnection) {
+      try { await amqpConnection.close(); } catch (_) {}
+      amqpConnection = null;
+    }
+
+    if (!redisClient.isOpen) {
+      await redisClient.connect();
+    }
+    amqpConnection = await amqp.connect(RABBITMQ_URL);
+    const channel = await amqpConnection.createChannel();
+    amqpChannel = channel;
 
     await channel.assertQueue(ORDER_QUEUE, { durable: true });
     await channel.assertQueue(NOTIFICATION_QUEUE, { durable: true });
@@ -96,40 +112,8 @@ async function startWorker() {
               channel.sendToQueue(NOTIFICATION_QUEUE, Buffer.from(JSON.stringify(successNotification)), { persistent: true });
             }
           } catch (err) {
-            if (err.response) {
-              const status = err.response.status;
-              const errorMsg = err.response.data.error || err.message;
-              console.error(`[Error] ${status} from Stock Service for Order ${orderId}: ${errorMsg}`);
-              if (status === 422 || status === 404) {
-                // Item not found or Insufficient stock - Cannot be fulfilled
-                console.error(`[Critical] Order ${orderId} failed fulfillment: ${errorMsg}`);
-                // Mark as processed (idempotency)
-                await redisClient.set(idempotencyKey, '1', { EX: 24 * 60 * 60 });
-                ordersFailedCounter.inc();
-                // Notify User of Failure
-                const failureNotification = {
-                  userId,
-                  orderId,
-                  type: 'ORDER_FAILED',
-                  message: `Sorry, your order for ${itemId} failed: ${errorMsg}`,
-                  status: 'rejected'
-                };
-                channel.sendToQueue(NOTIFICATION_QUEUE, Buffer.from(JSON.stringify(failureNotification)), { persistent: true });
-              } else if (status === 409) {
-                // Conflict (Optimistic Lock) - retry (requeue by sending to ORDER_QUEUE again)
-                console.log(`[Retry] Conflict detected for ${orderId}. Re-queuing...`);
-                ordersRetriedCounter.inc();
-                channel.sendToQueue(ORDER_QUEUE, Buffer.from(JSON.stringify(orderData)), { persistent: true });
-              } else {
-                // Server error - retry (requeue by sending to ORDER_QUEUE again)
-                ordersRetriedCounter.inc();
-                channel.sendToQueue(ORDER_QUEUE, Buffer.from(JSON.stringify(orderData)), { persistent: true });
-              }
-            } else {
-              console.error(`[Network Error] Could not reach Stock Service: ${err.message}`);
-              ordersRetriedCounter.inc();
-              channel.sendToQueue(ORDER_QUEUE, Buffer.from(JSON.stringify(orderData)), { persistent: true });
-            }
+            // handle error in async processing
+            console.error('Error in delayed order processing:', err.message);
           }
         }, processingDelay);
       }

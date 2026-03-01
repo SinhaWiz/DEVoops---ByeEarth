@@ -32,8 +32,34 @@ const httpRequestDuration = new promClient.Histogram({
   buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5],
 });
 
+// 30-second rolling latency window (for visual alert)
+const LATENCY_WINDOW_MS = 30_000;
+const LATENCY_ALERT_THRESHOLD_S = 1.0;
+const latencyWindow = []; // { ts: number, durationMs: number }
+
 app.use(cors());
 app.use(express.json());
+
+// Timing middleware — records every request into the Prometheus histogram
+// and the in-memory rolling window used by /latency-stats
+app.use((req, res, next) => {
+  const startHr = process.hrtime.bigint();
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - startHr) / 1_000_000;
+    const durationS = durationMs / 1000;
+    httpRequestDuration.observe(
+      { method: req.method, route: req.path, status_code: res.statusCode },
+      durationS
+    );
+    // Push into rolling window and evict entries older than 30s
+    const now = Date.now();
+    latencyWindow.push({ ts: now, durationMs });
+    while (latencyWindow.length > 0 && now - latencyWindow[0].ts > LATENCY_WINDOW_MS) {
+      latencyWindow.shift();
+    }
+  });
+  next();
+});
 
 // Chaos mode flag
 let chaosMode = false;
@@ -57,7 +83,7 @@ async function connectMQ() {
 
 // Root route
 app.get('/', (req, res) => {
-  res.status(200).json({ service: 'order-gateway', status: chaosMode ? 'DEGRADED' : 'UP', endpoints: ['/health', '/order', '/seed-stock', '/metrics', '/chaos'] });
+  res.status(200).json({ service: 'order-gateway', status: chaosMode ? 'DEGRADED' : 'UP', endpoints: ['/health', '/order', '/seed-stock', '/metrics', '/chaos', '/latency-stats'] });
 });
 
 // Main health endpoint
@@ -88,6 +114,22 @@ app.get('/metrics', async (req, res) => {
   } catch (err) {
     res.status(500).end(err.message);
   }
+});
+
+// Latency stats — 30-second rolling window for visual alert
+app.get('/latency-stats', (req, res) => {
+  const now = Date.now();
+  const recent = latencyWindow.filter(e => now - e.ts <= LATENCY_WINDOW_MS);
+  const count = recent.length;
+  const avgMs = count > 0 ? recent.reduce((sum, e) => sum + e.durationMs, 0) / count : 0;
+  const avgS = avgMs / 1000;
+  res.status(200).json({
+    avg30s: parseFloat(avgS.toFixed(3)),
+    count30s: count,
+    breached: avgS > LATENCY_ALERT_THRESHOLD_S,
+    thresholdS: LATENCY_ALERT_THRESHOLD_S,
+    windowMs: LATENCY_WINDOW_MS,
+  });
 });
 
 // Authentication Middleware
