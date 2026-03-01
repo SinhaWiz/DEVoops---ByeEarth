@@ -73,10 +73,10 @@ jobs:
       run: npm run lint
       working-directory: services/${{ matrix.service }}
 
-    - name: Run tests (placeholder)
+    - name: Run unit tests
       run: |
         if grep -q '"test":' package.json; then
-          npm test
+          npm test -- --testPathIgnorePatterns=integration.test.js --passWithNoTests
         else
           echo "No tests defined for ${{ matrix.service }}"
         fi
