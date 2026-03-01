@@ -10,6 +10,8 @@ const STOCK_SERVICE_URL = process.env.STOCK_SERVICE_URL || 'http://stock-service
 const ORDER_QUEUE = 'orders_queue';
 const NOTIFICATION_QUEUE = 'notifications_queue';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const MAX_RETRIES = 3;       // max re-publish attempts after the original attempt
+const RETRY_DELAY_MS = 2000; // base backoff delay (multiplied by attempt number)
 
 // Redis client for idempotency
 const redisClient = createClient({ url: REDIS_URL });
@@ -46,8 +48,8 @@ async function startWorker() {
     channel.consume(ORDER_QUEUE, async (msg) => {
       if (msg !== null) {
         const orderData = JSON.parse(msg.content.toString());
-        const { orderId, itemId, quantity, userId } = orderData;
-        console.log(`[Queue] Received Order: ${orderId} for Item: ${itemId}`);
+        const { orderId, itemId, quantity, userId, retryCount = 0 } = orderData;
+        console.log(`[Queue] Received Order: ${orderId} for Item: ${itemId} (attempt ${retryCount + 1}/${MAX_RETRIES + 1})`);
 
         // Idempotency check: skip if already processed
         const idempotencyKey = `order:processed:${orderId}`;
@@ -86,34 +88,67 @@ async function startWorker() {
               quantity: quantity
             });
 
-            if (response.status === 200) {
-              console.log(`[Success] Stock reduced for Order: ${orderId}. New stock: ${response.data.newQuantity}`);
-              // Mark as processed (idempotency)
-              await redisClient.set(idempotencyKey, '1', { EX: 24 * 60 * 60 }); // 1 day expiry
-              ordersProcessedCounter.inc();
+            // axios throws on non-2xx, so reaching here means status 200
+            console.log(`[Success] Stock reduced for Order: ${orderId}. New stock: ${response.data.newQuantity}`);
+            // Mark as processed (idempotency)
+            await redisClient.set(idempotencyKey, '1', { EX: 24 * 60 * 60 }); // 1 day expiry
+            ordersProcessedCounter.inc();
 
-              // Send "stock_verified" status
+            // Send "stock_verified" status
+            channel.sendToQueue(NOTIFICATION_QUEUE, Buffer.from(JSON.stringify({
+              userId,
+              orderId,
+              type: 'ORDER_STATUS',
+              status: 'stock_verified',
+              message: `Stock verified for your order.`
+            })), { persistent: true });
+
+            // Notify User — Order Ready
+            channel.sendToQueue(NOTIFICATION_QUEUE, Buffer.from(JSON.stringify({
+              userId,
+              orderId,
+              type: 'ORDER_SUCCESS',
+              message: `Your order for ${itemId} is ready! Remaining stock: ${response.data.newQuantity}`,
+              status: 'ready'
+            })), { persistent: true });
+
+          } catch (err) {
+            const httpStatus = err.response?.status;
+            // 422 = insufficient stock (permanent failure — no point retrying)
+            // 409 = optimistic lock conflict (transient — worth retrying)
+            const isPermanent = httpStatus === 422;
+            const hasRetriesLeft = retryCount < MAX_RETRIES;
+
+            if (!isPermanent && hasRetriesLeft) {
+              // Transient failure — re-publish with incremented retryCount and backoff
+              ordersRetriedCounter.inc();
+              const backoffMs = RETRY_DELAY_MS * (retryCount + 1);
+              console.warn(`[Retry] Order ${orderId} failed (attempt ${retryCount + 1}/${MAX_RETRIES + 1}), ` +
+                `retrying in ${backoffMs}ms. Reason: ${err.message}`);
+              setTimeout(() => {
+                channel.sendToQueue(
+                  ORDER_QUEUE,
+                  Buffer.from(JSON.stringify({ ...orderData, retryCount: retryCount + 1 })),
+                  { persistent: true }
+                );
+              }, backoffMs);
+            } else {
+              // Permanent failure (out of stock) or max retries exhausted
+              ordersFailedCounter.inc();
+              const reason = isPermanent
+                ? `${itemId} is out of stock`
+                : `max retries (${MAX_RETRIES}) exceeded`;
+              console.error(`[Failed] Order ${orderId} permanently failed: ${reason}`);
               channel.sendToQueue(NOTIFICATION_QUEUE, Buffer.from(JSON.stringify({
                 userId,
                 orderId,
-                type: 'ORDER_STATUS',
-                status: 'stock_verified',
-                message: `Stock verified for your order.`
+                type: 'ORDER_FAILED',
+                status: 'rejected',
+                message: isPermanent
+                  ? `Sorry, ${itemId} ran out of stock while processing your order.`
+                  : `Your order for ${itemId} could not be completed after ${MAX_RETRIES + 1} attempts. Please try again later.`
               })), { persistent: true });
-
-              // Notify User — Order Ready
-              const successNotification = {
-                userId,
-                orderId,
-                type: 'ORDER_SUCCESS',
-                message: `Your order for ${itemId} is ready! Remaining stock: ${response.data.newQuantity}`,
-                status: 'ready'
-              };
-              channel.sendToQueue(NOTIFICATION_QUEUE, Buffer.from(JSON.stringify(successNotification)), { persistent: true });
             }
-          } catch (err) {
-            // handle error in async processing
-            console.error('Error in delayed order processing:', err.message);
           }
         }, processingDelay);
       }
