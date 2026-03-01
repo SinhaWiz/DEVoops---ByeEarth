@@ -114,9 +114,9 @@ async function startWorker() {
 
           } catch (err) {
             const httpStatus = err.response?.status;
-            // 422 = insufficient stock (permanent failure — no point retrying)
-            // 409 = optimistic lock conflict (transient — worth retrying)
-            const isPermanent = httpStatus === 422;
+            // 400/404/422 = client/data failures (permanent — no point retrying)
+            // 409/5xx/network = transient (retryable)
+            const isPermanent = [400, 404, 422].includes(httpStatus);
             const hasRetriesLeft = retryCount < MAX_RETRIES;
 
             if (!isPermanent && hasRetriesLeft) {
