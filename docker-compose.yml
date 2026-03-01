@@ -8,8 +8,16 @@ services:
     environment:
       - NODE_ENV=production
     depends_on:
-      - order-gateway
-      - identity-provider
+      order-gateway:
+        condition: service_healthy
+      identity-provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   identity-provider:
     build:
@@ -20,7 +28,14 @@ services:
     environment:
       - PORT=3001
     depends_on:
-      - db-postgres
+      db-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   order-gateway:
     build:
@@ -34,9 +49,18 @@ services:
       - RABBITMQ_URL=amqp://mq-rabbitmq:5672
       - JWT_SECRET=super_secret_dev_key
     depends_on:
-      - db-redis
-      - mq-rabbitmq
-      - identity-provider
+      db-redis:
+        condition: service_healthy
+      mq-rabbitmq:
+        condition: service_healthy
+      identity-provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   stock-service:
     build:
@@ -52,8 +76,16 @@ services:
       - PGDATABASE=cafeteria
       - REDIS_URL=redis://db-redis:6379
     depends_on:
-      - db-postgres
-      - db-redis
+      db-postgres:
+        condition: service_healthy
+      db-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3003/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   kitchen-queue:
     build:
@@ -67,9 +99,18 @@ services:
       - STOCK_SERVICE_URL=http://stock-service:3003
       - REDIS_URL=redis://db-redis:6379
     depends_on:
-      - mq-rabbitmq
-      - stock-service
-      - db-redis
+      mq-rabbitmq:
+        condition: service_healthy
+      stock-service:
+        condition: service_healthy
+      db-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3004/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   notification-hub:
     build:
@@ -81,7 +122,14 @@ services:
       - PORT=3005
       - RABBITMQ_URL=amqp://mq-rabbitmq:5672
     depends_on:
-      - mq-rabbitmq
+      mq-rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3005/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   db-postgres:
     image: postgres:15-alpine
@@ -93,17 +141,35 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev -d cafeteria"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   db-redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   mq-rabbitmq:
     image: rabbitmq:3-management-alpine
     ports:
       - "5672:5672"
       - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   prometheus:
     image: prom/prometheus:v2.51.2
@@ -111,17 +177,45 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.retention.time=7d'
       - '--web.enable-lifecycle'
     depends_on:
-      - identity-provider
-      - order-gateway
-      - stock-service
-      - kitchen-queue
-      - notification-hub
+      identity-provider:
+        condition: service_healthy
+      order-gateway:
+        condition: service_healthy
+      stock-service:
+        condition: service_healthy
+      kitchen-queue:
+        condition: service_healthy
+      notification-hub:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   grafana:
     image: grafana/grafana:10.4.2
@@ -136,7 +230,14 @@ services:
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   postgres_data:
