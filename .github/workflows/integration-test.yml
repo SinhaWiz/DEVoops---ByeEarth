@@ -32,6 +32,8 @@ jobs:
             echo "Attempt $i/40 - waiting 5s..."
             sleep 5
           done
+      - name: Seed the database
+        run: npm run seed
       - name: Run identity-provider integration tests
         run: |
           cd services/identity-provider
