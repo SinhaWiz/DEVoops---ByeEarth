@@ -1,0 +1,84 @@
+# Alertmanager configuration
+# ------------------------------------------------------------------
+# Set these environment variables before running docker compose:
+#
+#   SLACK_WEBHOOK_URL   – incoming webhook URL from your Slack app
+#                         e.g. https://hooks.slack.com/services/T.../B.../xxx
+#
+#   SMTP_FROM           – sender address  (e.g. alerts@yourdomain.com)
+#   SMTP_TO             – recipient address (e.g. oncall@yourdomain.com)
+#   SMTP_HOST           – SMTP server host (e.g. smtp.gmail.com)
+#   SMTP_PORT           – SMTP server port (default 587 for STARTTLS)
+#   SMTP_USERNAME       – SMTP login username
+#   SMTP_PASSWORD       – SMTP login password / app-password
+#
+# For local testing without real credentials just leave them unset;
+# Alertmanager will start but delivery will fail silently.
+# ------------------------------------------------------------------
+
+global:
+  resolve_timeout: 5m
+
+  # SMTP defaults (used by the email receiver below)
+  smtp_smarthost: '${SMTP_HOST:-localhost}:${SMTP_PORT:-587}'
+  smtp_from: '${SMTP_FROM:-alerts@cafeteria.local}'
+  smtp_auth_username: '${SMTP_USERNAME:-}'
+  smtp_auth_password: '${SMTP_PASSWORD:-}'
+  smtp_require_tls: true
+
+route:
+  # All alerts go to the "cafeteria-team" group receiver by default.
+  receiver: cafeteria-team
+  group_by: [alertname, job]
+  group_wait: 30s        # wait 30 s to batch alerts in the same group
+  group_interval: 5m     # how long to wait before re-sending a grouped alert
+  repeat_interval: 1h    # re-notify every hour while an alert is still firing
+
+  routes:
+    # Critical alerts (ServiceDown) also get an immediate Slack ping.
+    - match:
+        severity: critical
+      receiver: cafeteria-team
+      continue: true       # still fan out to the default receiver
+
+receivers:
+  - name: cafeteria-team
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL:-https://hooks.slack.com/services/PLACEHOLDER}'
+        channel: '#cafeteria-alerts'
+        send_resolved: true
+        title: >-
+          [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}]
+          {{ .CommonLabels.alertname }}
+        text: |-
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }} — severity: `{{ .Labels.severity }}`
+          *Summary:* {{ .Annotations.summary }}
+          *Details:* {{ .Annotations.description }}
+          *Started:* {{ .StartsAt | since }}
+          {{ end }}
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+
+    email_configs:
+      - to: '${SMTP_TO:-oncall@cafeteria.local}'
+        send_resolved: true
+        headers:
+          subject: >-
+            [Cafeteria] {{ .Status | toUpper }} — {{ .CommonLabels.alertname }}
+        html: |
+          <h3>{{ .CommonLabels.alertname }} — {{ .Status | toUpper }}</h3>
+          {{ range .Alerts }}
+          <p><b>Summary:</b> {{ .Annotations.summary }}</p>
+          <p><b>Details:</b> {{ .Annotations.description }}</p>
+          <p><b>Severity:</b> {{ .Labels.severity }}</p>
+          <p><b>Started:</b> {{ .StartsAt }}</p>
+          {{ end }}
+
+inhibit_rules:
+  # If a ServiceDown fires for a job, suppress GatewayHighLatency for the same
+  # job — the latency alert is a symptom of the service being down.
+  - source_match:
+      alertname: ServiceDown
+    target_match:
+      alertname: GatewayHighLatency
+    equal: [job]
