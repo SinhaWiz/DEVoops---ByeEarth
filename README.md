@@ -2,6 +2,8 @@
 
 A resilient, fully-observable microservices platform for the IUT Cafeteria — built to survive the Ramadan rush that brought the old monolith down.
 
+Disclosure: This project was built with the help of GitHub Copilot.
+
 ---
 
 ## ⚡ Quick Start
